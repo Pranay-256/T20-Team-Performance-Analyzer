@@ -1,1260 +1,1519 @@
 import streamlit as st
-import pandas as pd
 import numpy as np
-import seaborn as sns
+import pandas as pd
 import matplotlib.pyplot as plt
+import seaborn as sns
+import warnings
+warnings.filterwarnings("ignore")
 
-sns.set_style("whitegrid")
+# Session state storage for dataset
+if "df2" not in st.session_state:
+    st.session_state.df2 = None
 
-st.set_page_config(page_title="T20 Cricket Team Performance Analysis", layout="wide")
+# -------------------------------------------------
+# PAGE CONFIG
+# -------------------------------------------------
 
-# =====================================================
-# -------------------- NAVIGATION ----------------------
-# =====================================================
-page = st.radio("", ["Home", "About"], horizontal=True)
+st.set_page_config(
+    page_title="T20 Cricket Team Analysis",
+    layout="wide",
+    initial_sidebar_state="collapsed"
+)
 
-# =====================================================
-# -------------------- ABOUT PAGE ----------------------
-# =====================================================
-if page == "About":
+st.markdown("""
+<style>
 
-    st.title("About This Project")
+div.stButton > button {
+    background-color: #ff4b4b;
+    color: white;
+    font-weight: 600;
+    border-radius: 8px;
+    height: 45px;
+    border: none;
+}
 
-    # ---------------------------------------------------
-    # 1. Problem Statement
-    # ---------------------------------------------------
+div.stButton > button:hover {
+    background-color: #e63939;
+}
 
-    st.header("1. Problem Statement")
+</style>
+""", unsafe_allow_html=True)
 
-    st.write("""
-    In many local, school-level, inter-college, and small tournament cricket matches, 
-    performance evaluation is often done manually. This creates several problems:
+# -------------------------------------------------
+# DATA VALIDATION FUNCTION
+# -------------------------------------------------
 
-    - Player contributions are judged subjectively.
-    - Awards such as Best Batsman or Best Bowler may not always be fairly decided.
-    - Batting partnerships are rarely analyzed in a structured way.
-    - Bowling performance is evaluated mainly on wickets, ignoring economy and consistency.
-    - Match-to-match performance comparison is difficult without proper records.
+def data_validation(df):
 
-    There is usually no structured data system to analyze performances across multiple matches.
+    bat_stats = (df["Batting_Start_Over"].isnull() &
+                (df["Out_Over"].notnull() |
+                 df["Balls_Played"].notnull() |
+                 df["Runs_Scored"].notnull()))
 
-    This project aims to solve that gap by introducing a simple, structured, and data-driven 
-    performance evaluation system that works even without ball-by-ball data.
-    """)
+    bat_stats2 = (df["Batting_Start_Over"].notnull() &
+                  (df["Out_Over"].isnull()))
 
-    # ---------------------------------------------------
-    # 2. Objective
-    # ---------------------------------------------------
+    bowl_stats = ((df["Overs_Bowled"].isnull() | df["Overs_Bowled"] == 0) &
+                  (df["Runs_Given"].notnull() | df["Wickets_Taken"].notnull()))
 
-    st.header("2. Objective")
+    invalid_player = ((df["Player_Name"].isnull()) &
+                     (df["Role"].notnull() |
+                      df["Batting_Position"].notnull() |
+                      df["Batting_Start_Over"].notnull() |
+                      df["Out_Over"].notnull() |
+                      df["Balls_Played"].notnull() |
+                      df["Runs_Scored"].notnull() |
+                      df["Overs_Bowled"].notnull() |
+                      df["Runs_Given"].notnull() |
+                      df["Wickets_Taken"].notnull()))
 
-    st.write("""
-    The main objective of this project is to build a clear and unbiased cricket performance 
-    analysis system using structured match-level data.
+    no_match = df["Match_No"].isnull()
+    no_position = df["Batting_Position"].isnull()
 
-    The system focuses on:
-    - Measuring individual batting contribution
-    - Evaluating bowling impact using wickets and economy rate
-    - Measuring player consistency across matches
-    - Comparing performances between roles (batsman, bowler, all-rounder)
-    - Providing fair statistical summaries for team evaluation
+    if no_match.any():
+        raise ValueError("Some players don't have Match Number information")
 
-    This project is designed for:
-    - Local cricket teams
-    - Gully cricket players
-    - School and college tournaments
-    - Small-scale tournaments without advanced data tools
+    elif no_position.any():
+        raise ValueError("Some players don't have Batting Position information")
 
-    The system ensures decisions are based on data rather than opinion.
-    """)
+    elif invalid_player.any():
+        raise ValueError("Some players don't have their name")
 
-    # ---------------------------------------------------
-    # 3. Recommended Dataset
-    # ---------------------------------------------------
+    elif (bat_stats.any()) or (bat_stats2.any()):
+        raise ValueError("Invalid data found in batting columns")
 
-    st.header("3. Recommended Dataset")
+    elif bowl_stats.any():
+        raise ValueError("Invalid data found in bowling columns")
 
-    st.write("""
-    The system accepts structured match-level datasets following a strict schema.
-
-    Required columns:
-
-    Match_No  
-    Player_Name  
-    Role (batsman / bowler / all-rounder)  
-    Batting_Position  
-    Batting_Start_Over  
-    Out_Over  
-    Balls_Played  
-    Runs_Scored  
-    Overs_Bowled  
-    Runs_Given  
-    Wickets_Taken  
-
-    Validation Rules Applied:
-
-    - Match_No must not be null.
-    - Player_Name must not be null.
-    - Batting data should not exist without valid batting entry.
-    - Bowling data should not exist if Overs_Bowled is zero.
-    - Numeric fields must contain valid numbers.
-    - Consistency calculations require more than one match.
-
-    The system supports:
-    - Single match dataset
-    - Multiple match datasets
-
-    If validation fails, the system stops and displays an error.
-    """)
-
-    # ---------------------------------------------------
-    # 4. Analytical Approach & Constraints
-    # ---------------------------------------------------
-
-    st.header("4. Analytical Approach & Constraints")
-
-    st.write("""
-    The Analytics Tab performs structured performance evaluation using match-level aggregation.
-
-    Batting Analysis:
-    - Difference between individual runs scored
-    - Strike rate comparison
-    - Total runs contribution by role
-    - Average runs by batting position (multi-match only)
-    - Batting consistency score
-
-    Bowling Analysis:
-    - Difference between individual wickets taken
-    - Economy rate comparison
-    - Total wickets contribution by role
-    - Bowling consistency score
-
-    Match Dynamics:
-    - Phase-wise wickets breakdown
-    - Role-based contribution analysis
-
-    Consistency Formula Used:
-
-    Consistency Score = Mean Performance ÷ (Standard Deviation + 1)
-
-    Constraints:
-    - Phase classification uses over-based logic.
-    - Batting position average requires multiple matches.
-    - Consistency requires at least two matches.
-
-    The analytical layer focuses on meaningful, interpretable metrics.
-    """)
-
-    # ---------------------------------------------------
-    # 5. Visual Representation
-    # ---------------------------------------------------
-
-    st.header("5. Visual Representation")
-
-    st.write("""
-    The Visual Representation tab converts analytical results into graphical summaries 
-    using Seaborn and Matplotlib (DPI = 120).
-
-    Included visualizations:
-
-    Bar Charts:
-    - Difference in individual runs
-    - Difference in wickets
-    - Strike rate comparison
-    - Economy rate comparison
-    - Batting consistency
-    - Bowling consistency
-    - Phase-wise wickets
-    - Average runs by position
-
-    Pie Charts:
-    - Total runs contribution by player
-    - Total wickets contribution by player
-    - Runs contribution by role
-    - Wickets contribution by role
-
-    All visuals are directly derived from validated match-level data.
-    """)
-
-    # ---------------------------------------------------
-    # 6. Limitations
-    # ---------------------------------------------------
-
-    st.header("6. Limitations")
-
-    st.write("""
-    Since ball-by-ball data is not available, the system cannot analyze:
-
-    - Phase-wise runs scored
-    - Exact batting partnerships
-    - Ball-level strike rate shifts
-    - Momentum changes
-    - Over-by-over progression
-    - Pressure situation impact
-    - Detailed partnership contributions
-
-    Advanced insights require ball-level datasets and are outside the scope 
-    of this version.
-
-    Future versions may include:
-    - Ball-by-ball integration
-    - Partnership tracking models
-    - Advanced impact metrics
-    - Win probability analysis
-    """)
-
-    # ---------------------------------------------------
-    # 7. Example Data Sets
-    # ---------------------------------------------------
-
-    st.header("7. Example Data Sets")
-
-    st.write("If you do not have your own dataset, you may download the sample datasets below and upload them in the Home section to test the system.")
-
-    # Dataset 1
-    try:
-        with open("RCB_IPL2024_FirstMatch.csv", "rb") as f1:
-            st.download_button(
-                label="Download Example Dataset - Match 1",
-                data=f1,
-                file_name="RCB_IPL2024_FirstMatch.csv",
-                mime="text/csv"
-            )
-    except:
-        pass
-
-    # Dataset 2
-    try:
-        with open("RCB_IPL2024_Match2_vs_PBKS.csv", "rb") as f2:
-            st.download_button(
-                label="Download Example Dataset - Match 2",
-                data=f2,
-                file_name="RCB_IPL2024_Match2_vs_PBKS.csv",
-                mime="text/csv"
-            )
-    except:
-        pass
-
-    # Dataset 3
-    try:
-        with open("RCB_IPL2024_Match3_vs_GT.csv", "rb") as f3:
-            st.download_button(
-                label="Download Example Dataset - Match 3",
-                data=f3,
-                file_name="RCB_IPL2024_Match3_vs_GT.csv",
-                mime="text/csv"
-            )
-    except:
-        pass
-
-    st.stop()
+    return True
 
 
-# =====================================================
-# -------------------- HOME PAGE ----------------------
-# =====================================================
+# -------------------------------------------------
+# SIDEBAR
+# -------------------------------------------------
 
-st.markdown(
-    "<h1 style='text-align: center;'>🏏 T20 Cricket Team Performance Analysis</h1>",
+with st.sidebar:
+
+    st.markdown(
+    """
+    <div style='text-align:center; font-size:30px;'>
+         Dashboard Menu
+    </div>
+    """,
+    unsafe_allow_html=True
+    )
+
+    page = st.radio("",["Analyze your Dataset","About"])
+
+    st.markdown("---")
+
+    st.markdown(
+        """
+        **Current Version : 2.0**
+
+        **Last Updated On : 16th March 2026**
+        """
+    )
+
+
+# -------------------------------------------------
+# MAIN PAGE CONTENT
+# -------------------------------------------------
+
+left, center, right = st.columns([1,3,1])
+
+with center:
+
+    if page == "Analyze your Dataset":
+
+        st.markdown(
+            """
+            <h2 style='text-align:center;'>🏏 T20 Cricket Team Performance Analysis Dashboard</h2>
+            """,
+            unsafe_allow_html=True
+        )
+
+        st.markdown(
+            """
+            <p style='text-align:center; color:gray; font-size:18px;'>
+            Analyze your cricket team's performance using T20 match data
+            </p>
+            """,
+            unsafe_allow_html=True
+        )
+
+        st.markdown("")
+
+        dataset_loaded = st.session_state.get("df2") is not None######
+
+        tab1, tab2, tab3, tab4 = st.tabs(
+            ["Dataset","Batting Analytics","Bowling Analytics","Summary"]
+        )
+
+        # ======================================================
+        # DATASET TAB
+        # ======================================================
+
+        with tab1:
+
+            st.markdown(
+    "<span style='color:gray;'>supports .csv and .xlsx file formats</span>",
     unsafe_allow_html=True
 )
 
-# ---------------- TEMPLATE DOWNLOAD ------------------
-st.subheader("Download Template Dataset")
+            # TEMPLATE DOWNLOAD
+            with open("template.csv","rb") as f:
+                st.download_button(
+                    "Download Template Dataset",
+                    f,
+                    "template.csv"
+                )
 
-try:
-    with open("template.csv", "rb") as file:
-        st.download_button(
-            label="Download Template CSV",
-            data=file,
-            file_name="T20_Template.csv",
-            mime="text/csv"
-        )
-except:
-    pass
-
-
-# ---------------- DATA UPLOAD ------------------
-st.subheader("Upload Dataset")
-
-upload_option = st.radio(
-    "Select Upload Type:",
-    ["Single Match Dataset", "Multiple Match Datasets"]
+            st.markdown(
+    "<p style='color:gray; font-size:14px;'>Download the template dataset, fill in your match data, and upload it here</p>",
+    unsafe_allow_html=True
 )
 
-uploaded_files = None
+            st.subheader("Upload your Files")
 
-if upload_option == "Single Match Dataset":
-    uploaded_files = st.file_uploader("Upload CSV", type=["csv"], accept_multiple_files=False)
-else:
-    uploaded_files = st.file_uploader("Upload Multiple CSVs", type=["csv"], accept_multiple_files=True)
+            st.markdown(
+    "<p style='color:#9aa0a6; font-size:14px;'>For testing purpose refer to the example datasets attached below</p>",
+    unsafe_allow_html=True
+)
 
-# =====================================================
-# ================== MAIN PROCESS =====================
-# =====================================================
-
-if uploaded_files:
-
-    # ---------------- DATA LOADING ------------------
-    if upload_option == "Single Match Dataset":
-        df = pd.read_csv(uploaded_files)
-    else:
-        dfs = []
-        for file in uploaded_files:
-            dfs.append(pd.read_csv(file))
-        df = pd.concat(dfs, ignore_index=True)
-
-    df.columns = df.columns.str.strip()
-
-    # ---------------- DATA VALIDATION (Hidden) ------------------
-    def data_validation(df):
-
-        no_match = df["Match_No"].isnull()
-        invalid_player = df["Player_Name"].isnull()
-
-        if no_match.any():
-            raise ValueError("Some rows missing Match_No")
-
-        if invalid_player.any():
-            raise ValueError("Some rows missing Player_Name")
-
-    try:
-        data_validation(df)
-    except Exception as err:
-        st.error(err)
-        st.stop()
-
-    # ---------------- DATA CLEANING (Hidden) ------------------
-    df2 = df.copy()
-
-    df2 = df2.dropna(subset=["Player_Name"])
-    df2["Batting_Position"] = df2["Batting_Position"].fillna("not-fixed")
-    df2["Role"] = df2["Role"].fillna(df2["Role"].mode()[0])
-
-    numeric_cols = [
-        "Batting_Start_Over", "Out_Over", "Balls_Played",
-        "Runs_Scored", "Overs_Bowled", "Runs_Given", "Wickets_Taken"
-    ]
-
-    for col in numeric_cols:
-        df2[col] = pd.to_numeric(df2[col], errors="coerce").fillna(0)
-
-    df2["Was_Out"] = (df2["Out_Over"] > 0)
-
-    # ---------------- FEATURE ENGINEERING ------------------
-
-    df2["Strike_Rate"] = np.where(
-        df2["Balls_Played"] > 0,
-        ((df2["Runs_Scored"] / df2["Balls_Played"]) * 100).round(2),
-        0
-    )
-
-    # ECONOMY CALCULATION (as per notebook)
-
-    over = df2["Overs_Bowled"].astype(int)
-    balls = (df2["Overs_Bowled"] - over) * 10
-    real_over = over + (balls / 6)
-
-    df2["Economy_Rate"] = 0.0
-    df2.loc[real_over > 0, "Economy_Rate"] = (
-        df2.loc[real_over > 0, "Runs_Given"] / real_over[real_over > 0]
-    ).round(2)
-
-    # ---------------- FILTERED DATA ------------------
-
-    done_batting = df2[df2["Balls_Played"] > 0]
-    done_bowling = df2[df2["Overs_Bowled"] > 0]
-
-    # =====================================================
-    # ======================= TABS =========================
-    # =====================================================
-
-    tab1, tab2, tab3 = st.tabs(
-        ["📊 Analytics", "📈 Visual Representations", "👤 Players-Summary"]
-    )
-
-    # =====================================================
-    # ===================== ANALYTICS ======================
-    # =====================================================
-
-    with tab1:
-
-        st.subheader("Dataset Overview")
-        st.write(f"Total Matches: {df2['Match_No'].nunique()}")
-        st.write(f"Total Players: {df2['Player_Name'].nunique()}")
-
-
-        # Runs Difference
-        runs_difference = (
-            done_batting.groupby("Player_Name")
-            .agg({"Runs_Scored": "sum", "Balls_Played": "sum"})
-            .sort_values(by="Runs_Scored", ascending=False)
-        )
-
-        st.subheader("Difference Between Individual Runs Scored")
-        st.dataframe(runs_difference)
-
-        # Team total Runs in each match
-        st.subheader("Team Total Runs in Each Match")
-
-        if done_batting["Match_No"].nunique() > 1:
-        
-            runs_each_match = (
-                done_batting
-                .groupby("Match_No")["Runs_Scored"]
-                .sum()
-                .reset_index()
-                .sort_values("Match_No")
+            upload_type = st.radio(
+                "",
+                ["Upload Single Dataset","Upload Multiple Datasets"]
             )
-        
-            st.dataframe(runs_each_match)
-        
-        else:
-            st.info("Team Total Runs in Each Match is not applicable for single match dataset.")        
 
-        # Player's Total runs in each match (with drop-down)
-        st.subheader("Player's Total Runs in Each Match")
+            uploaded_files = None
 
-        if done_batting["Match_No"].nunique() > 1:
-        
-            players_list = sorted(done_batting["Player_Name"].unique().tolist())
-        
-            selected_player = st.selectbox(
-                "Select a Player",
-                players_list
-            )
-        
-            selected_player_df = done_batting[
-                done_batting["Player_Name"] == selected_player
-            ]
-        
-            player_runs = (
-                selected_player_df.groupby("Match_No").agg({"Runs_Scored": "sum", "Balls_Played" : "sum"}).sort_values("Match_No")
-            )
-        
-            st.markdown(f"**{selected_player} - Total Runs in Each Match**")
-            st.dataframe(player_runs)
-        
-        else:
-            st.info("Player's Total Runs in Each Match is not applicable for single match dataset.")
-    
+            if upload_type == "Upload Single Dataset":
 
-        # Wickets Difference
-        bowling_diff = (
-            done_bowling.groupby("Player_Name")
-            .agg({"Wickets_Taken": "sum", "Overs_Bowled": "sum"})
-            .sort_values(by="Wickets_Taken", ascending=False)
-        )
+                uploaded_files = st.file_uploader(
+                    "Upload Single Dataset",
+                    type=["csv","xlsx"],
+                    accept_multiple_files=False
+                )
 
-        st.subheader("Difference Between Individual Wickets Taken")
-        st.dataframe(bowling_diff)
-
-        #Team Total Wickets in Each Match
-
-        st.subheader("Team Total Wickets in Each Match")
-
-        if done_bowling["Match_No"].nunique() > 1:
-        
-            wickets_each_match = (
-                done_bowling
-                .groupby("Match_No")["Wickets_Taken"]
-                .sum()
-                .reset_index()
-                .sort_values("Match_No")
-            )
-        
-            st.dataframe(wickets_each_match)
-        
-        else:
-            st.info("Team Total Wickets in Each Match is not applicable for single match dataset.")
-        
-        # Players Total Wickets in Each Match (With Dropdown)
-
-        st.subheader("Player's Total Wickets in Each Match")
-
-        if done_bowling["Match_No"].nunique() > 1:
-        
-            players_list_bowl = sorted(done_bowling["Player_Name"].unique().tolist())
-        
-            selected_player_bowl = st.selectbox(
-                "Select a Player",
-                players_list_bowl,
-                key="wicket_player_select"
-            )
-        
-            selected_player_bowl_df = done_bowling[
-                done_bowling["Player_Name"] == selected_player_bowl
-            ]
-        
-            player_wickets = (
-                selected_player_bowl_df
-                .groupby("Match_No")["Wickets_Taken"]
-                .sum()
-                .reset_index()
-                .sort_values("Match_No")
-            )
-        
-            st.markdown(f"**{selected_player_bowl} - Total Wickets in Each Match**")
-            st.dataframe(player_wickets)
-        
-        else:
-            st.info("Player's Total Wickets in Each Match is not applicable for single match dataset.")
-
-
-        # Strike_Rate Difference
-
-        batters_allrounders = done_batting[
-            (done_batting["Role"] == "batsman") |
-            (done_batting["Role"] == "all-rounder")
-        ]
-        
-        strike_rate_diff = (
-            batters_allrounders.groupby("Player_Name")
-            .agg({
-                "Strike_Rate": "mean",
-                "Runs_Scored": "sum",
-                "Balls_Played": "sum"
-            })
-            .sort_values(by="Strike_Rate", ascending=False)
-            .round(2)
-        )
-        
-        st.subheader("Strike-Rate Comparison between Batsmen and All-Rounders")
-        st.dataframe(strike_rate_diff)
-
-        # --------------------------------------------------
-        # Economy-Rate Comparison between Bowlers and All-Rounders
-        # --------------------------------------------------
-        
-        bowlers_allrounders = done_bowling[
-            (done_bowling["Role"] == "bowler") |
-            (done_bowling["Role"] == "all-rounder")
-        ]
-        
-        economy_diff = (
-            bowlers_allrounders.groupby("Player_Name")
-            .agg({
-                "Economy_Rate": "mean",
-                "Overs_Bowled": "sum",
-                "Runs_Given": "sum"
-            })
-            .sort_values(by="Economy_Rate")
-            .round(2)
-        )
-        
-        st.subheader("Economy-Rate Comparison between Bowlers and All-Rounders")
-        st.dataframe(economy_diff)
-
-        # --------------------------------------------------
-        # Total Runs Contribution Based on Roles
-        # --------------------------------------------------
-        
-        runs_contribution_by_role = (
-            done_batting[done_batting["Runs_Scored"] > 0]
-            .groupby("Role")["Runs_Scored"]
-            .sum()
-            .sort_values(ascending=False)
-        )
-        
-        st.subheader("Total Runs Contribution Based on Roles")
-        st.dataframe(runs_contribution_by_role)
-
-        # --------------------------------------------------
-        # Total Wickets Contribution Based on Roles
-        # --------------------------------------------------
-        
-        wickets_contribution_by_role = (
-            done_bowling[done_bowling["Wickets_Taken"] > 0]
-            .groupby("Role")["Wickets_Taken"]
-            .sum()
-            .sort_values(ascending=False)
-        )
-        
-        st.subheader("Total Wickets Taken Contribution Based on Roles")
-        st.dataframe(wickets_contribution_by_role)
-
-        # --------------------------------------------------
-        # Phase-wise Wickets Breakdown
-        # --------------------------------------------------
-        
-        wickets_df = df2[df2["Was_Out"] == True].copy()
-
-        def assign_phase(over):
-            if over <= 6:
-                return "Powerplay"
-            elif over <= 15:
-                return "Middle Overs"
             else:
-                return "Death Overs"
-        
-        wickets_df["Wicket_Phase"] = wickets_df["Out_Over"].apply(assign_phase)
-        
-        phase_wickets = (
-            wickets_df
-            .groupby("Wicket_Phase")
-            .size()   # count rows directly instead of Player_Name column
-            .reindex(["Powerplay", "Middle Overs", "Death Overs"])
-            .reset_index(name="Wickets_Lost")   # rename column properly
-        )
-        
-        st.subheader("Phase-wise Wickets Lost")
-        st.dataframe(phase_wickets)
-   
 
-        # --------------------------------------------------
-        # Players Consistency in Batting
-        # --------------------------------------------------
-        
-        if df2["Match_No"].nunique() > 1:
+                uploaded_files = st.file_uploader(
+                    "Upload Multiple Datasets",
+                    type=["csv","xlsx"],
+                    accept_multiple_files=True
+                )
 
+            st.markdown(
+    "<p style='color:#9aa0a6; font-size:14px;'>A single dataset may contain data from one match or multiple matches combined.</p>",
+    unsafe_allow_html=True
+)
+
+            confirm = st.button("Confirm Upload", use_container_width=True)
+
+            # ======================================================
+            # PROCESS DATA AFTER CONFIRM
+            # ======================================================
+
+            if confirm:
+
+                st.session_state.df2 = None ###
+
+                #if uploaded_files is None:
+                #    st.error("Please upload dataset first")
+
+                if uploaded_files is None:###
+                    st.error("Please upload dataset first")###
+                    st.session_state.df2 = None               ###
+
+                else:
+
+                    all_datasets = []
+
+                    # SINGLE FILE
+                    if not isinstance(uploaded_files,list):
+
+                        file = uploaded_files
+
+                        if file.name.endswith(".csv"):
+                            df_temp = pd.read_csv(file)
+                        else:
+                            df_temp = pd.read_excel(file)
+
+                        all_datasets.append(df_temp)
+
+                    # MULTIPLE FILES
+                    else:
+
+                        for file in uploaded_files:
+
+                            if file.name.endswith(".csv"):
+                                df_temp = pd.read_csv(file)
+                            else:
+                                df_temp = pd.read_excel(file)
+
+                            all_datasets.append(df_temp)
+
+                    if len(all_datasets)==0:
+                        st.error("No dataset loaded")
+
+                    else:
+
+                        df = pd.concat(all_datasets,ignore_index=True)
+
+                        try:
+
+                            data_validation(df)
+
+                            st.success("Dataset passed data validation")
+
+                            # ---------------- CLEANING ----------------
+
+                            df2 = df.copy()
+
+                            df2 = df2.dropna(subset=["Player_Name"])
+                            df2["Role"] = df2["Role"].fillna(df2["Role"].mode()[0])
+                            df2["Batting_Start_Over"] = df2["Batting_Start_Over"].fillna(0)
+                            df2["Out_Over"] = df2["Out_Over"].fillna(0)
+                            df2["Balls_Played"] = df2["Balls_Played"].fillna(0)
+                            df2["Runs_Scored"] = df2["Runs_Scored"].fillna(0)
+                            df2["Overs_Bowled"] = df2["Overs_Bowled"].fillna(0)
+
+                            df2.loc[(df2["Overs_Bowled"]>0)&(df2["Runs_Given"].isnull()),"Runs_Given"]=0
+                            df2.loc[(df2["Overs_Bowled"]>0)&(df2["Wickets_Taken"].isnull()),"Wickets_Taken"]=0
+
+                            df2["Runs_Given"]=df2["Runs_Given"].fillna(0)
+                            df2["Wickets_Taken"]=df2["Wickets_Taken"].fillna(0)
+
+                            # ---------------- FEATURE ENGINEERING ----------------
+
+                            df2["Was_Out"] = (
+                                (df2["Batting_Start_Over"] > 0) &
+                                (df2["Out_Over"] != "not-out")
+                            )
+
+                            df2["Strike_Rate"] = (
+                                (df2["Runs_Scored"] / df2["Balls_Played"]) * 100
+                            ).round(2)
+
+                            def economy_calc(df2):
+
+                                over = df2["Overs_Bowled"].astype(int)
+                                balls = (df2["Overs_Bowled"] - over) * 10
+
+                                df2["real_over"] = over + (balls/6)
+                                df2["Economy_Rate"] = 0.0
+
+                                df2.loc[df2["real_over"]>0,"Economy_Rate"] = \
+                                    df2["Runs_Given"]/df2["real_over"]
+
+                                df2.drop(columns=["real_over"],inplace=True)
+
+                                df2["Economy_Rate"] = df2["Economy_Rate"].round(2)
+
+                                return df2
+
+                            df2 = economy_calc(df2)
+
+                            st.success("Data cleaning and feature engineering completed")
+                            st.session_state.df2 = df2
+
+                        except Exception as err:
+
+                            st.error(f"Dataset is invalid: {err}")
+
+            # ======================================================
+            # DATASET OVERVIEW
+            # ======================================================
+
+            st.subheader("Dataset Overview")
+            
+            def column_info(title, text):
+                st.markdown(
+                    f"<p style='font-weight:bold;'>{title}</p>",
+                    unsafe_allow_html=True
+                )
+            
+                st.markdown(
+                    f"<p style='color:#9aa0a6; font-size:14px;'>{text}</p>",
+                    unsafe_allow_html=True
+                )
+            
+            
+            column_info(
+                "Match_No",
+                "Enter the match number to which the player’s performance belongs. Null values are NOT allowed because every record must belong to a match. Preferred datatype: Integer."
+            )
+            
+            column_info(
+                "Player_Name",
+                "Enter the name of the player whose statistics are being recorded. Null values are NOT allowed when other player statistics are present. Preferred datatype: String."
+            )
+            
+            column_info(
+                "Role",
+                "Enter the player's role such as batsman, bowler, or all-rounder. Null values are allowed but will automatically be filled with the most common role during data cleaning. Preferred datatype: String."
+            )
+            
+            column_info(
+                "Batting_Position",
+                "Enter the batting order position of the player (1–11). Null values are NOT allowed because batting order is required for analysis. Preferred datatype: Integer."
+            )
+            
+            column_info(
+                "Batting_Start_Over",
+                "Enter the over number when the player started batting. Null values are allowed only if the player did not bat in the match. Preferred datatype: Numeric."
+            )
+            
+            column_info(
+                "Out_Over",
+                "Enter the over in which the player got out. If the player remained not-out, you may leave it blank or specify 'not-out'. Null values are allowed for players who did not bat or remained not-out. Preferred datatype: Numeric or String."
+            )
+            
+            column_info(
+                "Balls_Played",
+                "Enter the total number of balls faced by the player while batting. Null values are allowed only when the player did not bat. Preferred datatype: Integer."
+            )
+            
+            column_info(
+                "Runs_Scored",
+                "Enter the total runs scored by the player in that match. Null values are allowed only when the player did not bat. Preferred datatype: Integer."
+            )
+            
+            column_info(
+                "Overs_Bowled",
+                "Enter the total overs bowled by the player (e.g., 2.4 overs). Null values are allowed when the player did not bowl in the match. Preferred datatype: Float."
+            )
+            
+            column_info(
+                "Runs_Given",
+                "Enter the total runs conceded by the player while bowling. Null values are allowed only if the player did not bowl; otherwise missing values will be filled with 0 during cleaning. Preferred datatype: Integer."
+            )
+            
+            column_info(
+                "Wickets_Taken",
+                "Enter the number of wickets taken by the bowler in the match. Null values are allowed only if the player did not bowl; otherwise missing values will be filled with 0 during cleaning. Preferred datatype: Integer."
+            )
+
+
+            # ======================================================
+            # EXAMPLE DATASETS
+            # ======================================================
+
+            st.subheader("Example Datasets")
+
+            with open("RCB_IPL2024_FirstMatch.csv","rb") as f:
+                st.download_button("Download Example Dataset 1",f,"RCB_IPL2024_FirstMatch.csv")
+
+            with open("RCB_IPL2024_Match2_vs_PBKS.csv","rb") as f:
+                st.download_button("Download Example Dataset 2",f,"RCB_IPL2024_Match2_vs_PBKS.csv")
+
+            with open("RCB_IPL2024_Match3_vs_GT.csv","rb") as f:
+                st.download_button("Download Example Dataset 3",f,"RCB_IPL2024_Match3_vs_GT.csv")
+
+        # OTHER TABS
+
+        with tab2:
+
+            if st.session_state.df2 is None:
+                #st.warning("Please upload and confirm dataset in Dataset tab first.")
+                st.stop()
+        
+            df2 = st.session_state.df2
+
+
+        
+            # ======================================================
+            # Individual Runs Scored by Players
+            # ======================================================
+        
+            st.markdown("### Individual Runs Scored by Players")
+        
+            done_batting = df2[df2["Balls_Played"] > 0]
+        
+            runs_difference = (
+                done_batting.groupby("Player_Name")
+                .agg({"Runs_Scored": "sum", "Balls_Played": "sum"})
+                .sort_values(by="Runs_Scored", ascending=False)
+                .astype(int)
+                .reset_index()
+            )
+        
+            runs_difference.index = runs_difference.index + 1
+        
+            st.dataframe(
+                runs_difference[["Player_Name", "Runs_Scored", "Balls_Played"]],
+                use_container_width=True
+            )
+        
+            colors = sns.color_palette("coolwarm", len(runs_difference))
+        
+            fig, ax = plt.subplots(figsize=(10,5), dpi=120)
+        
+            sns.barplot(
+                y=runs_difference["Player_Name"],
+                x=runs_difference["Runs_Scored"],
+                palette=colors,
+                ax=ax
+            )
+        
+            ax.set_title("Individual Runs Scored by Players", fontsize=16, fontweight="bold")
+            ax.set_xlabel("Runs Scored", fontsize=12)
+            ax.set_ylabel("Players", fontsize=12)
+        
+            ax.grid(axis='x', linestyle='--', alpha=0.4)
+        
+            plt.tight_layout()
+        
+            st.pyplot(fig)
+
+            st.divider()
+        
+            # ======================================================
+            # Total Runs Contribution
+            # ======================================================
+        
+            st.markdown("### Total Runs Contribution")
+        
+            top_batters = runs_difference[["Player_Name", "Runs_Scored"]].head()
+        
+            other_runs = runs_difference["Runs_Scored"].sum().astype(int) - top_batters["Runs_Scored"].sum().astype(int)
+        
+            batting_data = top_batters.copy()
+        
+            batting_data.loc[len(batting_data)] = ["Others", int(other_runs)]
+        
+            batting_data = batting_data[batting_data["Runs_Scored"] > 0]
+        
+            st.dataframe(
+                batting_data,
+                use_container_width=True
+            )
+        
+            fig, ax = plt.subplots(figsize=(8,6), dpi=120)
+        
+            wedges, texts, autotexts = ax.pie(
+                batting_data["Runs_Scored"],
+                labels=None,
+                autopct="%1.1f%%",
+                startangle=90,
+                wedgeprops={"edgecolor": "black"}
+            )
+        
+            legend_labels = [
+                f"{player} - {runs}"
+                for player, runs in zip(batting_data["Player_Name"], batting_data["Runs_Scored"])
+            ]
+        
+            ax.legend(
+                wedges,
+                legend_labels,
+                title="Players",
+                loc="center left",
+                bbox_to_anchor=(1, 0.5)
+            )
+        
+            ax.set_title("Total Runs Contribution", fontsize=16, fontweight="bold")
+        
+            plt.tight_layout()
+        
+            st.pyplot(fig)
+
+            st.divider()
+
+
+            # ======================================================
+            # Player's Total Runs in Each Match
+            # ======================================================
+            
+            st.markdown("### Player's Total Runs in Each Match")
+            
+            if done_batting["Match_No"].nunique() > 1:
+            
+                players_list = sorted(done_batting["Player_Name"].unique())
+            
+                selected_player = st.selectbox(
+                    "Select Player",
+                    players_list
+                )
+            
+                selected_player_df = done_batting[
+                    done_batting["Player_Name"] == selected_player
+                ]
+            
+                player_runs = (
+                    selected_player_df.groupby("Match_No")["Runs_Scored"]
+                    .sum()
+                    .reset_index()
+                    .sort_values("Match_No")
+                )
+            
+                player_runs["Runs_Scored"] = player_runs["Runs_Scored"].astype(int)
+            
+                player_runs.index += 1
+            
+                st.dataframe(player_runs, use_container_width=True)
+            
+                x_vals = player_runs["Match_No"].astype(int)
+                y_vals = player_runs["Runs_Scored"]
+            
+                fig, ax = plt.subplots(figsize=(8,5), dpi=120)
+            
+                sns.lineplot(
+                    x=x_vals,
+                    y=y_vals,
+                    marker="o",
+                    color="darkblue",
+                    ax=ax
+                )
+            
+                ax.set_xticks(range(min(x_vals), max(x_vals)+1))
+            
+                ax.set_title(
+                    f"{selected_player}'s Total Runs in Each Match",
+                    fontsize=16,
+                    fontweight="bold"
+                )
+            
+                ax.set_xlabel("Match No", fontsize=12)
+                ax.set_ylabel("Runs Scored in each match", fontsize=12)
+            
+                ax.grid(linestyle='--', alpha=0.4)
+            
+                plt.tight_layout()
+            
+                st.pyplot(fig)
+            
+            else:
+            
+                st.warning(
+                    "Player's Total Runs in Each Match is not applicable for single match dataset."
+                )
+            
+            st.divider()
+
+
+            st.markdown("### Runs Scored Contribution Based on Roles")
+
+            runs_contribution_by_role = done_batting[done_batting["Runs_Scored"] > 0]
+            
+            runs_contribution_by_role = (
+                runs_contribution_by_role.groupby("Role", as_index=False)["Runs_Scored"]
+                .sum()
+                .sort_values(by="Runs_Scored", ascending=False)
+                .reset_index(drop=True)
+            )
+            
+            runs_contribution_by_role["Runs_Scored"] = runs_contribution_by_role["Runs_Scored"].astype(int)
+            runs_contribution_by_role.index = runs_contribution_by_role.index + 1
+            
+            st.dataframe(
+                runs_contribution_by_role,
+                use_container_width=True
+            )
+            
+            fig, ax = plt.subplots(figsize=(8,6), dpi=120)
+            
+            wedges, texts, autotexts = ax.pie(
+                runs_contribution_by_role["Runs_Scored"],
+                labels=None,
+                autopct="%1.1f%%",
+                startangle=90,
+                wedgeprops={"edgecolor": "black"}
+            )
+            
+            legend_labels = [
+                f"{role} - {runs}"
+                for role, runs in zip(
+                    runs_contribution_by_role["Role"],
+                    runs_contribution_by_role["Runs_Scored"]
+                )
+            ]
+            
+            ax.legend(
+                wedges,
+                legend_labels,
+                title="Roles",
+                loc="center left",
+                bbox_to_anchor=(1, 0.5)
+            )
+            
+            ax.set_title("Runs Scored Contribution Based on Roles", fontsize=16, fontweight="bold")
+            
+            plt.tight_layout()
+            
+            st.pyplot(fig)
+
+            st.divider()
+
+
+            # ======================================================
+            # Strike Rate Comparison
+            # ======================================================
+        
+            st.markdown("### Strike-Rate Comparison between Batsmen and All-Rounders")
+        
+            batters_allrounders = done_batting[
+                (done_batting["Role"] == "batsman") |
+                (done_batting["Role"] == "all-rounder")
+            ]
+        
+            strike_rate_diff = (
+                batters_allrounders.groupby("Player_Name")
+                .agg({
+                    "Role": "first",
+                    "Strike_Rate": "mean",
+                    "Runs_Scored": "sum",
+                    "Balls_Played": "sum"
+                })
+                .sort_values(by="Strike_Rate", ascending=False)
+            ).round(2).reset_index()
+        
+            strike_rate_diff["Runs_Scored"] = strike_rate_diff["Runs_Scored"].astype(int)
+            strike_rate_diff["Balls_Played"] = strike_rate_diff["Balls_Played"].astype(int)
+        
+            strike_rate_diff.index = strike_rate_diff.index + 1
+        
+            st.dataframe(
+                strike_rate_diff[["Player_Name", "Role", "Strike_Rate"]],
+                use_container_width=True
+            )
+        
+            colors = {"batsman": "#4C72B0", "all-rounder": "#DD8452"}
+        
+            fig, ax = plt.subplots(figsize=(10,5), dpi=120)
+        
+            sns.barplot(
+                x=strike_rate_diff["Strike_Rate"],
+                y=strike_rate_diff["Player_Name"],
+                hue=strike_rate_diff["Role"],
+                palette=colors,
+                ax=ax
+            )
+        
+            ax.set_title(
+                "Strike-Rate Comparison between Batsmen and All-Rounders",
+                fontsize=16,
+                fontweight="bold"
+            )
+        
+            ax.set_xlabel("Strike Rate", fontsize=12)
+            ax.set_ylabel("Players", fontsize=12)
+        
+            ax.grid(axis='x', linestyle='--', alpha=0.4)
+        
+            plt.tight_layout()
+        
+            st.pyplot(fig)
+
+            st.divider()
+
+
+            st.markdown("### Players Consistency in Batting")
+
+            match_balls_played = df2[df2["Balls_Played"] > 0]
+            
             match_runs = (
-                done_batting.groupby(["Match_No", "Player_Name"])["Runs_Scored"]
+                match_balls_played.groupby(["Match_No", "Player_Name"])["Runs_Scored"]
                 .sum()
                 .reset_index()
             )
-        
-            batting_consistency = (
-                match_runs.groupby("Player_Name")["Runs_Scored"]
-                .agg(["mean", "std", "count"])
-                .round(2)
-            )
-        
-            batting_consistency = batting_consistency[
-                batting_consistency["count"] > 1
-            ]
-        
-            batting_consistency["Consistency_Score"] = (
-                batting_consistency["mean"] /
-                (batting_consistency["std"] + 1)
-            ).round(2)
-        
-            batting_consistency = batting_consistency.sort_values(
-                by="Consistency_Score",
-                ascending=False
-            )
-        
-            # Reset index to convert Player_Name to column
-            batting_consistency = batting_consistency.reset_index()
-        
-            # Reorder columns
-            batting_consistency = batting_consistency[
-                ["Player_Name", "Consistency_Score", "mean", "std", "count"]
-            ]
-        
-            st.subheader("Players Consistency in Batting")
-            st.dataframe(batting_consistency)
-        
-        else:
-        
-            st.info("Players Consistency in Batting is not applicable for single match dataset.")
+            
+            if match_balls_played["Match_No"].nunique() > 1:
+            
+                batting_consistency = (
+                    match_runs.groupby("Player_Name")["Runs_Scored"]
+                    .agg(["mean", "std", "count"])
+                    .round(2)
+                    .reset_index()
+                )
+            
+                batting_consistency = batting_consistency[batting_consistency["count"] > 1]
+            
+                batting_consistency["Consistency_Score"] = (
+                    batting_consistency["mean"] /
+                    (batting_consistency["std"] + 1)
+                ).round(2)
+            
+                batting_consistency = batting_consistency.sort_values(
+                    by="Consistency_Score",
+                    ascending=False
+                ).reset_index(drop=True)
+            
+                batting_consistency.index += 1
+            
+                st.dataframe(
+                    batting_consistency[["Player_Name", "Consistency_Score"]],
+                    use_container_width=True
+                )
+            
+                colors = sns.color_palette("coolwarm", len(batting_consistency))
+            
+                fig, ax = plt.subplots(figsize=(10,5), dpi=120)
+            
+                sns.barplot(
+                    y=batting_consistency["Player_Name"],
+                    x=batting_consistency["Consistency_Score"],
+                    palette=colors,
+                    ax=ax
+                )
+            
+                ax.set_title("Players Consistency in Batting", fontsize=16, fontweight="bold")
+                ax.set_ylabel("Players", fontsize=12)
+                ax.set_xlabel("Consistency Score", fontsize=12)
+            
+                ax.grid(axis='x', linestyle='--', alpha=0.4)
+            
+                plt.tight_layout()
+            
+                st.pyplot(fig)
+            
+            else:
+            
+                st.warning("Players Consistency in Batting is not applicable for single match dataset")
 
+            st.divider()    
 
-        # --------------------------------------------------
-        # Players Consistency in Bowling
-        # --------------------------------------------------
-        
-        if df2["Match_No"].nunique() > 1:
+            st.markdown("### Average Runs by Batting Order")
 
-            match_wickets = (
-                done_bowling.groupby(["Match_No", "Player_Name"])["Wickets_Taken"]
+            #if df2["Match_No"].nunique() > 1:            
+
+            df2["Batting_Order"] = pd.cut(
+                df2["Batting_Position"],
+                bins=[0,3,7,11],
+                labels=["top","middle","lower"]
+            ).astype(str)
+            
+            order_runs = (
+                df2.groupby("Batting_Order", as_index=False)["Runs_Scored"]
                 .sum()
-                .reset_index()
+                .sort_values(by="Runs_Scored", ascending=False)
+                .reset_index(drop=True)
+            )
+            
+            order_runs["Average_Runs_Scored"] = order_runs["Runs_Scored"]
+            
+            order_runs = order_runs.drop("Runs_Scored", axis=1)
+            
+            order_runs.index += 1
+            
+            st.dataframe(
+                order_runs,
+                use_container_width=True
             )
         
-            bowling_consistency = (
-                match_wickets.groupby("Player_Name")["Wickets_Taken"]
-                .agg(["mean", "std", "count"])
-                .round(2)
-            )
+            fig, ax = plt.subplots(figsize=(8,5), dpi=120)
         
-            bowling_consistency = bowling_consistency[
-                bowling_consistency["count"] > 1
-            ]
-        
-            bowling_consistency["Consistency_Score"] = (
-                bowling_consistency["mean"] /
-                (bowling_consistency["std"] + 1)
-            ).round(2)
-        
-            bowling_consistency = bowling_consistency.sort_values(
-                by="Consistency_Score",
-                ascending=False
-            )
-        
-            # Reset index to make Player_Name a column
-            bowling_consistency = bowling_consistency.reset_index()
-        
-            # Reorder columns
-            bowling_consistency = bowling_consistency[
-                ["Player_Name", "Consistency_Score", "mean", "std", "count"]
-            ]
-        
-            st.subheader("Players Consistency in Bowling")
-            st.dataframe(bowling_consistency)
-        
-        else:
-            st.info("Players Consistency in Bowling is not applicable for single match dataset.")
-
-
-        # --------------------------------------------------
-        # Average Runs by Batting Position
-        # --------------------------------------------------
-        
-        if df2["Match_No"].nunique() > 1:
-        
-            avg_runs_by_position = (
-                done_batting.groupby("Batting_Position")["Runs_Scored"]
-                .mean()
-                .sort_index()
-                .round(2)
-            )
-        
-            st.subheader("Average Runs by Batting Position")
-            st.dataframe(avg_runs_by_position)
-        
-        else:
-            st.info("Average Runs by Batting Position is not applicable for single match dataset.")
-        
-
-    # =====================================================
-    # ===================== VISUALS ========================
-    # =====================================================
-
-    with tab2:
-
-        # Runs Bar
-        st.subheader("Difference in Runs Scored")
-        plt.figure(figsize = (6,4) , dpi=120)
-        sns.barplot(y=runs_difference.index, x=runs_difference["Runs_Scored"])
-        plt.title("Difference in Runs Scored")
-        st.pyplot(plt.gcf())
-        plt.close()
-
-        # Team total runs in each match
-        st.subheader("Team Total Runs in Each Match")
-
-        if done_batting["Match_No"].nunique() > 1:
-        
-            runs_each_match = (
-                done_batting
-                .groupby("Match_No")["Runs_Scored"]
-                .sum()
-                .sort_index()
-            )
-        
-            x_vals = runs_each_match.index.astype(int)
-            y_vals = runs_each_match.values
-        
-            plt.figure(dpi=120)
-        
-            sns.lineplot(x=x_vals, y=y_vals, marker="o")
-        
-            plt.xticks(range(min(x_vals), max(x_vals) + 1))
-            plt.title("Team Total Runs in Each Match")
-            plt.xlabel("Match No")
-            plt.ylabel("Total Runs Scored")
-            plt.tight_layout()
-        
-            st.pyplot(plt.gcf())
-            plt.close()
-        
-        else:
-            st.info("Team Total Runs in Each Match is not applicable for single match dataset.")
-
-        #player's total runs in each match    
-        st.subheader("Player's Total Runs in Each Match")
-
-        if done_batting["Match_No"].nunique() > 1:
-        
-            players_list = sorted(done_batting["Player_Name"].unique().tolist())
-        
-            selected_player = st.selectbox(
-                "Select a Player",
-                players_list,
-                key="player_runs_trend"
-            )
-        
-            selected_player_df = done_batting[
-                done_batting["Player_Name"] == selected_player
-            ]
-        
-            player_runs = (
-                selected_player_df
-                .groupby("Match_No")["Runs_Scored"]
-                .sum()
-                .reset_index()
-                .sort_values("Match_No")
-            )
-        
-            x_vals = player_runs["Match_No"].astype(int)
-            y_vals = player_runs["Runs_Scored"]
-        
-            plt.figure(dpi=120)
-        
-            sns.lineplot(x=x_vals, y=y_vals, marker="o")
-        
-            plt.xticks(range(min(x_vals), max(x_vals) + 1))
-            plt.title(f"{selected_player}'s Total Runs in Each Match")
-            plt.xlabel("Match No")
-            plt.ylabel("Runs Scored")
-            plt.tight_layout()
-        
-            st.pyplot(plt.gcf())
-            plt.close()
-        
-        else:
-            st.info("Player's Total Runs in Each Match is not applicable for single match dataset.")
-
-
-        # Wickets Bar
-        st.subheader("Difference in Wickets Taken")
-        plt.figure(dpi=120)
-        sns.barplot(x=bowling_diff["Wickets_Taken"], y=bowling_diff.index)
-        plt.title("Difference in Wickets Taken")
-        st.pyplot(plt.gcf())
-        plt.close()
-
-        # team total wickets in each match
-        st.subheader("Team Total Wickets in Each Match")
-
-        if done_bowling["Match_No"].nunique() > 1:
-        
-            wickets_each_match = (
-                done_bowling
-                .groupby("Match_No")["Wickets_Taken"]
-                .sum()
-                .sort_index()
-            )
-        
-            x_vals = wickets_each_match.index.astype(int)
-            y_vals = wickets_each_match.values
-        
-            plt.figure(dpi=120)
-            sns.lineplot(x=x_vals, y=y_vals, marker="o")
-        
-            plt.xticks(range(min(x_vals), max(x_vals) + 1))
-            plt.title("Team Total Wickets in Each Match")
-            plt.xlabel("Match No")
-            plt.ylabel("Total Wickets Taken")
-            plt.tight_layout()
-        
-            st.pyplot(plt.gcf())
-            plt.close()
-        
-        else:
-            st.info("Team Total Wickets in Each Match is not applicable for single match dataset.")
-
-        #Player's Total wickets in each match
-        st.subheader("Player's Total Wickets in Each Match")
-
-        if done_bowling["Match_No"].nunique() > 1:
-        
-            players_list_bowl = sorted(done_bowling["Player_Name"].unique().tolist())
-        
-            selected_player_bowl = st.selectbox(
-                "Select a Player",
-                players_list_bowl,
-                key="player_wickets_trend"
-            )
-        
-            selected_player_bowl_df = done_bowling[
-                done_bowling["Player_Name"] == selected_player_bowl
-            ]
-        
-            player_wickets = (
-                selected_player_bowl_df
-                .groupby("Match_No")["Wickets_Taken"]
-                .sum()
-                .reset_index()
-                .sort_values("Match_No")
-            )
-        
-            x_vals = player_wickets["Match_No"].astype(int)
-            y_vals = player_wickets["Wickets_Taken"]
-        
-            plt.figure(dpi=120)
-            sns.lineplot(x=x_vals, y=y_vals, marker="o")
-        
-            plt.xticks(range(min(x_vals), max(x_vals) + 1))
-            plt.title(f"{selected_player_bowl}'s Total Wickets in Each Match")
-            plt.xlabel("Match No")
-            plt.ylabel("Wickets Taken")
-            plt.tight_layout()
-        
-            st.pyplot(plt.gcf())
-            plt.close()
-        
-        else:
-            st.info("Player's Total Wickets in Each Match is not applicable for single match dataset.")
-    
-
-
-        #Total Runs Contribution
-        st.subheader("Total Runs Contribution")
-        
-        top_batters = (
-            done_batting.groupby("Player_Name")["Runs_Scored"]
-            .sum()
-            .sort_values(ascending=False)
-            .head()
-        )
-        
-        others = runs_difference["Runs_Scored"].sum() - top_batters.sum()
-        
-        batting_data = top_batters.copy()
-        batting_data["Others"] = others
-        batting_data = batting_data[batting_data > 0]
-        
-        plt.figure(dpi=120)
-        wedges, texts, autotexts = plt.pie(
-            batting_data,
-            autopct="%1.1f%%",
-            startangle=90
-        )
-
-        for autotext in autotexts:
-            autotext.set_fontsize(9)        
-        
-        plt.legend(
-            wedges,
-            batting_data.index,
-            title="Players",
-            loc="center left",
-            bbox_to_anchor=(1, 0.5)
-        )
-        
-        plt.title("Total Runs Contribution")
-        plt.tight_layout()
-        
-        st.pyplot(plt.gcf())
-        plt.close()
-         
-
-        #Total Wickets Contribution
-
-        st.subheader("Total Wickets Contribution")
-
-        top_bowling = (
-            done_bowling.groupby("Player_Name")["Wickets_Taken"]
-            .sum()
-            .sort_values(ascending=False)
-        )
-        
-        other_bowlers = bowling_diff["Wickets_Taken"].sum() - top_bowling.sum()
-        
-        bowling_data = top_bowling.copy()
-        bowling_data["Others"] = other_bowlers
-        bowling_data = bowling_data[bowling_data > 0]
-        
-        plt.figure(dpi=120)
-
-        wedges, texts, autotexts = plt.pie(
-            bowling_data,
-            autopct="%1.1f%%",
-            startangle=90
-        )
-
-        for autotext in autotexts:
-            autotext.set_fontsize(9)
-
-        plt.legend(
-            wedges,
-            bowling_data.index,
-            title="Players",
-            loc="center left",
-            bbox_to_anchor=(1, 0.5)
-        )
-        
-        plt.title("Total Wickets Contribution")
-        plt.tight_layout()
-        
-        st.pyplot(plt.gcf())
-        plt.close()
-
-
-        #Strike-Rate Comparison
-
-        st.subheader("Strike-Rate Comparison between Batsmen and All-Rounders")
-
-        plt.figure(dpi=120)
-        sns.barplot(
-            x=strike_rate_diff["Strike_Rate"],
-            y=strike_rate_diff.index
-        )
-        plt.title("Strike-Rate Comparison")
-        plt.xlabel("Strike Rate")
-        plt.ylabel("Players")
-        st.pyplot(plt.gcf())
-        plt.close()
-
-        #Economy-Rate Comparision
-
-        st.subheader("Economy-Rate Comparison between Bowlers and All-Rounders")
-
-        plt.figure(dpi=120)
-        sns.barplot(
-            x=economy_diff["Economy_Rate"],
-            y=economy_diff.index
-        )
-        plt.title("Economy Rate Comparison")
-        plt.xlabel("Economy Rate")
-        plt.ylabel("Players")
-        st.pyplot(plt.gcf())
-        plt.close()
-
-        #Total Runs Contribution Based on Roles
-
-        st.subheader("Total Runs Contribution by Roles")
-
-        plt.figure(dpi=120)
-        
-        wedges, texts, autotexts = plt.pie(
-            runs_contribution_by_role,
-            autopct="%1.1f%%",
-            startangle=90
-        )
-        
-        # 👇 Reduce percentage font size
-        for autotext in autotexts:
-            autotext.set_fontsize(9)
-        
-        plt.legend(
-            wedges,
-            runs_contribution_by_role.index,
-            title="Roles",
-            loc="center left",
-            bbox_to_anchor=(1, 0.5)
-        )
-        
-        plt.title("Runs Contribution by Roles")
-        plt.tight_layout()
-        
-        st.pyplot(plt.gcf())
-        plt.close()
-
-
-        # Total Wickets Contribution Based on Roles
-
-        st.subheader("Total Wickets Contribution by Roles")
-
-        plt.figure(dpi=120)
-        
-        wedges, texts, autotexts = plt.pie(
-            wickets_contribution_by_role,
-            autopct="%1.1f%%",
-            startangle=90
-        )
-        
-        # 👇 Reduce percentage font size
-        for autotext in autotexts:
-            autotext.set_fontsize(9)
-        
-        plt.legend(
-            wedges,
-            wickets_contribution_by_role.index,
-            title="Roles",
-            loc="center left",
-            bbox_to_anchor=(1, 0.5)
-        )
-        
-        plt.title("Wickets Contribution by Roles")
-        plt.tight_layout()
-        
-        st.pyplot(plt.gcf())
-        plt.close()
-
-
-        # Phase-Wise Wickets Breakdown
-
-        st.subheader("Phase-wise Wickets Lost")
-
-        plt.figure(dpi=120)
-        sns.barplot(
-            x=phase_wickets["Wicket_Phase"],
-            y=phase_wickets["Wickets_Lost"]
-        )
-        plt.title("Phase-wise Wickets Lost")
-        plt.xlabel("Match Phase")
-        plt.ylabel("Total Wickets Lost")
-        st.pyplot(plt.gcf())
-        plt.close()
-
-        # Players Consistency in Batting
-
-        if df2["Match_No"].nunique() > 1:
-
-            st.subheader("Players Consistency in Batting")
-        
-            plt.figure(dpi=120)
             sns.barplot(
-                y=batting_consistency["Player_Name"],
-                x=batting_consistency["Consistency_Score"]
+                x=order_runs["Batting_Order"],
+                y=order_runs["Average_Runs_Scored"],
+                palette="viridis",
+                ax=ax
             )
-            plt.title("Batting Consistency Score")
-            st.pyplot(plt.gcf())
-            plt.close()
         
-        else:
-            st.info("Batting consistency not applicable for single match dataset.")
-
-        #Players Consistency in Bowling
-
-        if df2["Match_No"].nunique() > 1:
-
-            st.subheader("Players Consistency in Bowling")
+            ax.set_title("Average Runs by Batting Order", fontsize=16, fontweight="bold")
+            ax.set_xlabel("Batting Order", fontsize=12)
+            ax.set_ylabel("Average Runs Scored", fontsize=12)
         
-            plt.figure(dpi=120)
+            ax.grid(axis='y', linestyle='--', alpha=0.4)
+        
+            plt.tight_layout()
+        
+            st.pyplot(fig)
+            
+            #else:
+            
+            #    st.warning("Average Runs by Batting Order is not applicable for single match dataset")
+
+            st.divider() 
+
+
+            # ======================================================
+            # Phase wise Wickets Lost Breakdown
+            # ======================================================
+            
+            st.markdown("### Phase wise Wickets Lost Breakdown")
+            
+            wickets_df = df2[df2["Was_Out"] == True].copy()
+            
+            wickets_df["Out_Over"] = pd.to_numeric(wickets_df["Out_Over"], errors="coerce")
+            
+            def assign_phase(over):
+                if over <= 6:
+                    return "Powerplay"
+                elif over <= 15:
+                    return "Middle Overs"
+                else:
+                    return "Death Overs"
+            
+            wickets_df["Wicket_Phase"] = wickets_df["Out_Over"].apply(assign_phase)
+            
+            phase_wickets = (
+                wickets_df.groupby("Wicket_Phase")["Player_Name"]
+                .size()
+                .reindex(["Powerplay", "Middle Overs", "Death Overs"])
+                .reset_index(name="Wickets_Lost")
+                .sort_values(by="Wickets_Lost", ascending=False)
+            )
+            
+            phase_wickets.index += 1
+            
+            st.dataframe(phase_wickets, use_container_width=True)
+            
+            fig, ax = plt.subplots(figsize=(8,5), dpi=120)
+            
             sns.barplot(
-                y=bowling_consistency["Player_Name"],
-                x=bowling_consistency["Consistency_Score"]
+                x=phase_wickets["Wicket_Phase"],
+                y=phase_wickets["Wickets_Lost"],
+                palette="viridis",
+                ax=ax
             )
-            plt.title("Bowling Consistency Score")
-            st.pyplot(plt.gcf())
-            plt.close()
+            
+            ax.set_title("Phase-wise Wickets Lost", fontsize=16, fontweight="bold")
+            ax.set_xlabel("Match Phases", fontsize=12)
+            ax.set_ylabel("Wickets Lost", fontsize=12)
+            
+            ax.grid(axis='y', linestyle='--', alpha=0.4)
+            
+            plt.tight_layout()
+            
+            st.pyplot(fig)
+            
+            st.divider()   
+
+        with tab3:
+
+            if st.session_state.get("df2") is None:
         
-        else:
-            st.info("Bowling consistency not applicable for single match dataset.")
-
-        #Average Runs by Batting Position
-
-        if df2["Match_No"].nunique() > 1:
-
-            st.subheader("Average Runs by Batting Position")
+                st.warning("Please upload and confirm dataset in Dataset tab first.")
         
-            plt.figure(dpi=120)
+            else:
+        
+                df2 = st.session_state.df2
+
+
+        
+                # ======================================================
+                # Individual Wickets Taken by Players
+                # ======================================================
+        
+            st.markdown("### Individual Wickets Taken by Players")
+            
+            done_bowling = df2[df2["Overs_Bowled"] > 0]
+            
+            bowling_diff = (
+                done_bowling.groupby("Player_Name", as_index=False)
+                .agg({"Wickets_Taken": "sum", "Overs_Bowled": "sum"})
+                .sort_values(by="Wickets_Taken", ascending=False)
+                .reset_index(drop=True)
+            )
+            
+            bowling_diff["Wickets_Taken"] = bowling_diff["Wickets_Taken"].astype(int)
+            bowling_diff.index = bowling_diff.index + 1
+            
+            st.dataframe(bowling_diff, use_container_width=True)
+            
+            colors = sns.color_palette("coolwarm", len(bowling_diff))
+            
+            fig, ax = plt.subplots(figsize=(10,5), dpi=120)
+            
             sns.barplot(
-                x=avg_runs_by_position.index,
-                y=avg_runs_by_position.values
+                x=bowling_diff["Wickets_Taken"],
+                y=bowling_diff["Player_Name"],
+                palette=colors,
+                ax=ax
             )
-            plt.title("Average Runs by Batting Position")
-            plt.xlabel("Batting Position")
-            plt.ylabel("Average Runs")
-            st.pyplot(plt.gcf())
-            plt.close()
-        
-        else:
-            st.info("Average runs by position not applicable for single match dataset.")
-    
-    # =====================================================
-    # ================== PLAYERS SUMMARY ==================
-    # =====================================================
-
-    with tab3:
-
-        st.subheader("Highest Run Scorers")
-
-        top_runs = (
-            done_batting.groupby(["Role", "Player_Name"])
-            .agg({"Runs_Scored": "sum", "Strike_Rate": "mean", "Balls_Played": "sum"})
-            .sort_values(by="Runs_Scored", ascending=False)
-            .head(3)
-        )
-
-        st.dataframe(top_runs.reset_index())
-
-        st.subheader("Highest Wicket Takers")
-
-        top_wickets = (
-            done_bowling.groupby(["Role", "Player_Name"])
-            .agg({"Wickets_Taken": "sum", "Overs_Bowled": "sum", "Economy_Rate" : "mean"})
-            .sort_values(by="Wickets_Taken", ascending=False)
-            .head(3)
-        )
-
-        st.dataframe(top_wickets.reset_index())
-
-        st.subheader("Players with Highest Strike Rate")
-
-        strike = (
-            done_batting.groupby(["Role", "Player_Name"])
-            .agg({"Strike_Rate": "mean", "Balls_Played": "sum", "Runs_Scored": "sum"})
-            .sort_values(by="Strike_Rate", ascending=False)
-            .head(3)
-        )
-
-        st.dataframe(strike.reset_index())
-
-        st.subheader("Players with Highest Economy Rate")
-
-        economy = (
-            done_bowling.groupby(["Role", "Player_Name"])
-            .agg({"Economy_Rate": "mean", "Overs_Bowled": "sum", "Runs_Given": "sum",
-                  "Wickets_Taken": "sum"})
-            .sort_values(by="Economy_Rate", ascending=True)
-            .head(3)
-        )
-
-        st.dataframe(economy.reset_index())
+            
+            ax.set_title("Individual Wickets Taken by Players", fontsize=16, fontweight="bold")
+            ax.set_ylabel("Players", fontsize=12)
+            ax.set_xlabel("Wickets Taken", fontsize=12)
+            
+            ax.grid(axis='x', linestyle='--', alpha=0.4)
+            
+            plt.tight_layout()
+            
+            st.pyplot(fig)
+            
+            st.divider()
 
 
-        if df2["Match_No"].nunique() > 1:
+            # ======================================================
+            # Total Wickets Contribution
+            # ======================================================
+            
+            st.markdown("### Total Wickets Contribution")
+            
+            top_bowling = bowling_diff[["Player_Name", "Wickets_Taken"]].head()
+            
+            other_bowlers = (
+                bowling_diff["Wickets_Taken"].sum().astype(int)
+                - top_bowling["Wickets_Taken"].sum().astype(int)
+            )
+            
+            bowling_data = top_bowling.copy().reset_index(drop=True)
+            
+            bowling_data.loc[len(bowling_data)] = ["Others", int(other_bowlers)]
+            
+            bowling_data.index += 1
+            
+            bowling_data = bowling_data[bowling_data["Wickets_Taken"] > 0]
+            
+            st.dataframe(bowling_data, use_container_width=True)
+            
+            fig, ax = plt.subplots(figsize=(8,6), dpi=120)
+            
+            wedges, texts, autotexts = ax.pie(
+                bowling_data["Wickets_Taken"],
+                labels=None,
+                autopct="%1.1f%%",
+                startangle=90,
+                wedgeprops={"edgecolor": "black"}
+            )
+            
+            legend_labels = [
+                f"{player} - {wickets}"
+                for player, wickets in zip(
+                    bowling_data["Player_Name"],
+                    bowling_data["Wickets_Taken"]
+                )
+            ]
+            
+            ax.legend(
+                wedges,
+                legend_labels,
+                title="Players",
+                loc="center left",
+                bbox_to_anchor=(1, 0.5)
+            )
+            
+            ax.set_title("Total Wickets Contribution", fontsize=16, fontweight="bold")
+            
+            plt.tight_layout()
+            
+            st.pyplot(fig)
+            
+            st.divider()
 
-            st.subheader("Most Consistent Players in Batting")
-        
-            # Merge role info
-            batting_consistency_summary = batting_consistency.copy().reset_index()
-        
-            total_batting_stats = (
-                done_batting.groupby(["Player_Name", "Role"])
+
+            # ======================================================
+            # Player's Total Wickets in Each Match
+            # ======================================================
+            
+            st.markdown("### Player's Total Wickets in Each Match")
+            
+            if done_bowling["Match_No"].nunique() > 1:
+            
+                players_list_bowl = sorted(done_bowling["Player_Name"].unique())
+            
+                selected_player_bowl = st.selectbox(
+                    "Select Player",
+                    players_list_bowl
+                )
+            
+                selected_player_bowl_df = done_bowling[
+                    done_bowling["Player_Name"] == selected_player_bowl
+                ]
+            
+                player_wickets = (
+                    selected_player_bowl_df.groupby("Match_No")["Wickets_Taken"]
+                    .sum()
+                    .reset_index()
+                    .sort_values("Match_No")
+                )
+            
+                player_wickets["Wickets_Taken"] = player_wickets["Wickets_Taken"].astype(int)
+            
+                player_wickets.index += 1
+            
+                st.dataframe(player_wickets, use_container_width=True)
+            
+                x_vals = player_wickets["Match_No"].astype(int)
+                y_vals = player_wickets["Wickets_Taken"].astype(int)
+            
+                fig, ax = plt.subplots(figsize=(8,5), dpi=120)
+            
+                sns.lineplot(
+                    x=x_vals,
+                    y=y_vals,
+                    marker="o",
+                    color="darkblue",
+                    ax=ax
+                )
+            
+                ax.set_xticks(range(min(x_vals), max(x_vals)+1))
+            
+                ax.set_yticks(range(min(y_vals), max(y_vals)+1))
+            
+                ax.set_title(
+                    f"{selected_player_bowl}'s Total Wickets in Each Match",
+                    fontsize=16,
+                    fontweight="bold"
+                )
+            
+                ax.set_xlabel("Match No", fontsize=12)
+                ax.set_ylabel("Wickets Taken in each match", fontsize=12)
+            
+                ax.grid(linestyle='--', alpha=0.4)
+            
+                plt.tight_layout()
+            
+                st.pyplot(fig)
+            
+            else:
+            
+                st.warning("Player's Total Wickets in Each Match is not applicable for single match dataset.")
+            
+            st.divider()
+
+            # ======================================================
+            # Wickets Taken Contribution Based on Roles
+            # ======================================================
+            
+            st.markdown("### Wickets Taken Contribution Based on Roles")
+            
+            wickets_contribution_by_role = done_bowling[done_bowling["Wickets_Taken"] > 0]
+            
+            wickets_contribution_by_role = (
+                wickets_contribution_by_role
+                .groupby("Role", as_index=False)["Wickets_Taken"]
+                .sum()
+                .sort_values(by="Wickets_Taken", ascending=False)
+            )
+            
+            wickets_contribution_by_role["Wickets_Taken"] = wickets_contribution_by_role["Wickets_Taken"].astype(int)
+            
+            wickets_contribution_by_role.index += 1
+            
+            st.dataframe(wickets_contribution_by_role, use_container_width=True)
+            
+            fig, ax = plt.subplots(figsize=(8,6), dpi=120)
+            
+            wedges, texts, autotexts = ax.pie(
+                wickets_contribution_by_role["Wickets_Taken"],
+                labels=None,
+                autopct="%1.1f%%",
+                startangle=90,
+                wedgeprops={"edgecolor": "black"}
+            )
+            
+            legend_labels = [
+                f"{role} - {wickets}"
+                for role, wickets in zip(
+                    wickets_contribution_by_role["Role"],
+                    wickets_contribution_by_role["Wickets_Taken"]
+                )
+            ]
+            
+            ax.legend(
+                wedges,
+                legend_labels,
+                title="Roles",
+                loc="center left",
+                bbox_to_anchor=(1, 0.5)
+            )
+            
+            ax.set_title("Wickets Taken Contribution Based on Roles", fontsize=16, fontweight="bold")
+            
+            plt.tight_layout()
+            
+            st.pyplot(fig)
+            
+            st.divider()
+
+            # ======================================================
+            # Economy-Rate Comparison between Bowlers and All-Rounders
+            # ======================================================
+            
+            st.markdown("### Economy-Rate Comparison between Bowlers and All-Rounders")
+            
+            bowlers_allrounders = done_bowling[
+                (done_bowling["Role"] == "bowler") |
+                (done_bowling["Role"] == "all-rounder")
+            ]
+            
+            economy_diff = (
+                bowlers_allrounders
+                .groupby("Player_Name", as_index=False)
                 .agg({
-                    "Balls_Played": "sum",
-                    "Runs_Scored": "sum"
-                })
-                .reset_index()
-            )
-        
-            batting_consistency_summary = batting_consistency_summary.merge(
-                total_batting_stats,
-                on="Player_Name"
-            )
-        
-            batting_consistency_summary = (
-                batting_consistency_summary
-                .sort_values(by="Consistency_Score", ascending=False)
-                .head(3)
-            )
-        
-            batting_consistency_summary = batting_consistency_summary[
-                ["Role", "Player_Name", "Consistency_Score", "Runs_Scored" ,"Balls_Played"]
-            ]
-        
-            st.dataframe(batting_consistency_summary)
-        
-        else:
-            st.info("Batting consistency is not applicable for single match dataset.")
-
-
-        if df2["Match_No"].nunique() > 1:
-
-            st.subheader("Most Consistent Players in Bowling")
-        
-            bowling_consistency_summary = bowling_consistency.copy().reset_index()
-        
-            total_bowling_stats = (
-                done_bowling.groupby(["Player_Name", "Role"])
-                .agg({
+                    "Role": "first",
+                    "Economy_Rate": "mean",
                     "Overs_Bowled": "sum",
-                    "Wickets_Taken": "sum"
+                    "Runs_Given": "sum"
                 })
+                .sort_values(by="Economy_Rate")
+            ).round(2).reset_index(drop=True)
+            
+            economy_diff.index += 1
+            
+            st.dataframe(
+                economy_diff[["Player_Name", "Role", "Economy_Rate"]],
+                use_container_width=True
+            )
+            
+            colors = {"bowler": "#4C72B0", "all-rounder": "#DD8452"}
+            
+            fig, ax = plt.subplots(figsize=(10,5), dpi=120)
+            
+            sns.barplot(
+                x=economy_diff["Economy_Rate"],
+                y=economy_diff["Player_Name"],
+                hue=economy_diff["Role"],
+                palette=colors,
+                ax=ax
+            )
+            
+            ax.set_title(
+                "Economy-Rate Comparison between Bowlers and All-Rounders",
+                fontsize=16,
+                fontweight="bold"
+            )
+            
+            ax.set_xlabel("Economy Rate", fontsize=12)
+            ax.set_ylabel("Players", fontsize=12)
+            
+            ax.grid(axis='x', linestyle='--', alpha=0.4)
+            
+            plt.tight_layout()
+            
+            st.pyplot(fig)
+            
+            st.divider()
+
+            # ======================================================
+            # Players Consistency in Bowling
+            # ======================================================
+            
+            st.markdown("### Players Consistency in Bowling")
+            
+            match_overs = df2[df2["Overs_Bowled"] > 0]
+            
+            match_wickets = (
+                match_overs
+                .groupby(["Match_No", "Player_Name"])["Wickets_Taken"]
+                .sum()
                 .reset_index()
             )
+            
+            if match_overs["Match_No"].nunique() > 1:
+            
+                bowling_consistency = (
+                    match_wickets
+                    .groupby("Player_Name")["Wickets_Taken"]
+                    .agg(["mean", "std", "count"])
+                    .round(2)
+                    .reset_index()
+                )
+            
+                bowling_consistency = bowling_consistency[bowling_consistency["count"] > 1]
+            
+                bowling_consistency["Consistency_Score"] = (
+                    bowling_consistency["mean"] /
+                    (bowling_consistency["std"] + 1)
+                ).round(2)
+            
+                bowling_consistency = bowling_consistency.sort_values(
+                    by="Consistency_Score",
+                    ascending=False
+                ).reset_index(drop=True)
+            
+                bowling_consistency.index += 1
+            
+                st.dataframe(
+                    bowling_consistency[["Player_Name", "Consistency_Score"]],
+                    use_container_width=True
+                )
+            
+                colors = sns.color_palette("coolwarm", len(bowling_consistency))
+            
+                fig, ax = plt.subplots(figsize=(10,5), dpi=120)
+            
+                sns.barplot(
+                    y=bowling_consistency["Player_Name"],
+                    x=bowling_consistency["Consistency_Score"],
+                    palette=colors,
+                    ax=ax
+                )
+            
+                ax.set_title("Players Consistency in Bowling", fontsize=16, fontweight="bold")
+                ax.set_xlabel("Consistency Score", fontsize=12)
+                ax.set_ylabel("Players", fontsize=12)
+            
+                ax.grid(axis='x', linestyle='--', alpha=0.4)
+            
+                plt.tight_layout()
+            
+                st.pyplot(fig)
+            
+            else:
+            
+                st.warning("Players Consistency in Bowling is not applicable for single match dataset")
+            
+            st.divider()
+
+        with tab4:
+            if st.session_state.get("df2") is None:
         
-            bowling_consistency_summary = bowling_consistency_summary.merge(
-                total_bowling_stats,
-                on="Player_Name"
+                st.warning("Please upload and confirm dataset in Dataset tab first.")
+        
+            else:
+        
+                df2 = st.session_state.df2
+
+            # ======================================================
+            # Summary
+            # ======================================================
+
+            # ======================================================
+            # Total Runs Scored and Total Wickets Taken in each Match
+            # ======================================================
+            
+            st.markdown("### Total Runs Scored and Total Wickets Taken in each Match")
+            
+            runs_wickets = (
+                df2.groupby("Match_No", as_index=False)
+                .agg({"Runs_Scored": "sum", "Wickets_Taken": "sum"})
+                .astype(int)
             )
-        
-            bowling_consistency_summary = (
-                bowling_consistency_summary
-                .sort_values(by="Consistency_Score", ascending=False)
-                .head(3)
+            
+            runs_wickets.index += 1
+            
+            st.dataframe(
+                runs_wickets[["Match_No", "Runs_Scored", "Wickets_Taken"]],
+                use_container_width=True
             )
+            
+            fig, ax = plt.subplots(1, 2, figsize=(10,4), dpi=120)
+            
+            sns.barplot(
+                x=runs_wickets["Match_No"],
+                y=runs_wickets["Runs_Scored"],
+                palette="viridis",
+                ax=ax[0]
+            )
+            
+            ax[0].set_xlabel("Match Number", fontsize=12)
+            ax[0].set_ylabel("Runs Scored", fontsize=12)
+            ax[0].set_title("Runs Scored in each Match", fontsize=10, fontweight="bold")
+            ax[0].grid(axis='y', linestyle='--', alpha=0.4)
+            
+            sns.barplot(
+                x=runs_wickets["Match_No"],
+                y=runs_wickets["Wickets_Taken"],
+                palette="viridis",
+                ax=ax[1]
+            )
+            
+            ax[1].set_xlabel("Match Number", fontsize=12)
+            ax[1].set_ylabel("Wickets Taken", fontsize=12)
+            ax[1].set_title("Wickets Taken in each Match", fontsize=10, fontweight="bold")
+            ax[1].grid(axis='y', linestyle='--', alpha=0.4)
+            
+            plt.tight_layout()
+            
+            st.pyplot(fig)
+            
+            st.divider()
+
+
+            st.markdown("## Team Performance Summary")
+            st.markdown(" ")
+            
+            st.markdown(
+            f"""
+            **1.** **{runs_difference.iloc[0]["Player_Name"]}** is the highest run scorer with **{runs_difference.iloc[0]["Runs_Scored"]} runs**.
+            
+            **2.** **{bowling_diff.iloc[0]["Player_Name"]}** is the highest wicket taker with **{bowling_diff.iloc[0]["Wickets_Taken"]} wickets**.
+            
+            **3.** **{strike_rate_diff.iloc[0]["Player_Name"]}** has the highest strike rate of **{strike_rate_diff.iloc[0]["Strike_Rate"]}**.
+            
+            **4.** **{economy_diff.iloc[0]["Player_Name"]}** has the best bowling economy rate of **{economy_diff.iloc[0]["Economy_Rate"]}**.
+            
+            **5.** **{runs_contribution_by_role.iloc[0]["Role"]}** are the highest contributors in scoring total runs with **{runs_contribution_by_role.iloc[0]["Runs_Scored"]} runs**, followed by **{runs_contribution_by_role.iloc[1]["Role"]}** with **{runs_contribution_by_role.iloc[1]["Runs_Scored"]} runs**.
+            
+            **6.** **{wickets_contribution_by_role.iloc[0]["Role"]}s** are the highest contributors in taking wickets with **{wickets_contribution_by_role.iloc[0]["Wickets_Taken"]} wickets**, followed by **{wickets_contribution_by_role.iloc[1]["Role"]}s** with **{wickets_contribution_by_role.iloc[1]["Wickets_Taken"]} wickets**.
+            
+            **7.** The **{order_runs.iloc[0]["Batting_Order"]} order** is the strongest batting order followed by the **{order_runs.iloc[1]["Batting_Order"]} order**.
+            
+            **8.** The team has lost most wickets in the **{phase_wickets.iloc[0]["Wicket_Phase"]}**, losing **{phase_wickets.iloc[0]["Wickets_Lost"]} wickets**.
+            """
+            )                    
+
+
+    elif page == "About":
+
+        st.markdown(
+            """
+            <h3 style='text-align:center;'>About This Dashboard</h3>
+            """,
+            unsafe_allow_html=True
+        )
+
+        # ======================================================
+        # About the Creator
+        # ======================================================
         
-            bowling_consistency_summary = bowling_consistency_summary[
-                ["Role", "Player_Name", "Consistency_Score", "Wickets_Taken", "Overs_Bowled"]
-            ]
+        st.markdown("### About the Creator : Pranay Jha")
         
-            st.dataframe(bowling_consistency_summary)
+        st.markdown("""
+        Hello! My name is **Pranay Jha**, and I am currently pursuing a **Bachelor of Technology (B.Tech) in Computer Science and Engineering**. 
+        I am actively learning and exploring the fields of **Data Science, Data Analytics, and Data Visualization**.
         
-        else:
-            st.info("Bowling consistency is not applicable for single match dataset.")    
+        This project, **T20 Cricket Team Performance Analysis Dashboard**, has been developed as part of my learning journey in data analytics. 
+        The main goal of this project is to demonstrate how **structured data analysis and interactive dashboards** can be used to evaluate sports performance more effectively.
+        
+        Through this project, I focused on applying practical data analysis techniques using Python libraries such as **NumPy, Pandas, Matplotlib, Seaborn, and Streamlit**. 
+        The dashboard allows users to upload cricket match datasets and instantly generate insights about **batting performance, bowling performance, player consistency, and match-level statistics**.
+        
+        This project highlights my ability to:
+        
+        - Work with **real-world structured datasets**
+        - Perform **data cleaning and feature engineering**
+        - Build **interactive analytical dashboards**
+        - Communicate insights through **data visualization**
+        - Design **user-friendly analytical tools**
+        
+        My aim is to continue improving my skills in **data analytics, machine learning, and dashboard development**, and build more practical projects that solve real-world problems using data.
+        """)
+        
+        st.divider()
+        
+        # ======================================================
+        # Problem Statement
+        # ======================================================
+        
+        st.markdown("### Problem Statement for this Project")
+        
+        st.markdown("""
+        In many **local cricket matches, school tournaments, inter-college competitions, and small community leagues**, player performance evaluation is usually done **manually or based on personal observation**. 
+        This creates several limitations and challenges.
+        
+        Some common problems include:
+        
+        - **Player contributions are often judged subjectively** rather than using actual performance statistics.
+        - Awards such as **Best Batsman or Best Bowler** may not always be fairly decided.
+        - **Batting partnerships and contributions** are rarely analyzed in a structured way.
+        - **Bowling performance is usually evaluated only by wickets**, ignoring important factors such as economy rate and consistency.
+        - **Match-to-match performance comparison becomes difficult** when proper records are not maintained.
+        - In most small tournaments, there is **no structured data system available** to analyze performances across multiple matches.
+        
+        Because of these issues, it becomes difficult for teams, organizers, and players to **fairly evaluate performance and identify strengths and weaknesses**.
+        """)
+        
+        st.divider()
+        
+        # ======================================================
+        # Objective
+        # ======================================================
+        
+        st.markdown("### Objective")
+        
+        st.markdown("""
+        The main objective of this project is to build a **clear, structured, and unbiased cricket performance analysis system** using match-level data.
+        
+        Instead of relying on manual judgments, the system uses **data-driven insights** to evaluate team and player performances.
+        
+        The dashboard focuses on:
+        
+        - Measuring **individual batting contribution**
+        - Evaluating **bowling impact using wickets and economy rate**
+        - Measuring **player consistency across multiple matches**
+        - Comparing performances between roles such as **batsman, bowler, and all-rounder**
+        - Providing **fair statistical summaries** for team performance evaluation
+        
+        This project is designed to be useful for:
+        
+        - **Local cricket teams**
+        - **Gully cricket players**
+        - **School and college tournaments**
+        - **Small-scale cricket competitions**
+        - Teams that want **simple data-based performance evaluation without advanced analytics tools**
+        
+        The system helps ensure that decisions and evaluations are **based on actual data rather than opinion**.
+        """)
+        
+        st.divider()
+        
+        # ======================================================
+        # Tech Stack
+        # ======================================================
+        
+        st.markdown("### Tech Stack")
+        
+        st.markdown("""
+        This project has been developed using the **Python data analytics ecosystem** along with an interactive dashboard framework.
+        
+        **Libraries and tools used in this project:**
+        
+        - **Python** – Core programming language used for data processing and analytics.
+        - **NumPy** – Used for numerical operations and handling structured numeric data efficiently.
+        - **Pandas** – Used for data cleaning, data manipulation, grouping, aggregation, and analysis of cricket match datasets.
+        - **Matplotlib** – Used to create charts and plots for visualizing cricket performance statistics.
+        - **Seaborn** – Used for enhanced statistical visualizations and aesthetically improved charts.
+        - **Streamlit** – Used to build the interactive web dashboard that allows users to upload datasets and explore insights dynamically.
+        
+        Together, these tools allow the project to transform **raw match data into meaningful insights and visual analytics**.
+        """)
+        
+        st.divider()
+        
+        # ======================================================
+        # Analytical Approach and Visualizations
+        # ======================================================
+        
+        st.markdown("### Analytical Approach and Visualizations")
+        
+        st.markdown("""
+        The analysis in this dashboard is divided into two major sections: **Batting Analytics** and **Bowling Analytics**.
+        
+        **Batting Analysis includes:**
+        
+        - Individual runs scored by players
+        - Total runs contribution by top players
+        - Player runs scored across matches            
+        - Strike rate comparison between batsmen and all-rounders
+        - Role-wise contribution in total runs scored
+        - Player batting consistency across matches
+        - Batting order strength analysis
+        
+        **Bowling Analysis includes:**
+        
+        - Individual wickets taken by bowlers
+        - Total wickets contribution by players
+        - Wickets taken by players across matches            
+        - Wickets contribution based on player roles
+        - Economy rate comparison between bowlers and all-rounders
+        - Player bowling consistency across matches
+        
+        **Visualization techniques used:**
+        
+        - **Bar Charts/Horizontal Bar Charts** – To compare player performances clearly.
+        - **Pie Charts** – To show contribution percentages (runs and wickets).
+        - **Line Charts** – To analyze player performance trends across matches.
+        - **Grouped Bar Charts** – To compare match-level statistics such as runs and wickets.
+        
+        These visualizations help convert raw numerical data into **clear, interpretable insights** for better performance evaluation.
+        """)
+        
+        st.divider()
+        
+        # ======================================================
+        # Recent Updates
+        # ======================================================
+        
+        st.markdown("### Recent Update")
+        
+        st.markdown("""
+        **Current Version:** 2.0  
+        
+        **Last Updated On:** 16th March 2026  
+        
+        **Improvements Made:**
+        
+        - Improved overall **dashboard user interface**
+        - Added support for **.xlsx dataset uploads**
+        - Enhanced **data validation and cleaning**
+        - Added **more detailed batting and bowling analytics**
+        - Improved **visualization clarity and chart styling**
+        - Added **interactive player performance analysis**
+        - Organized insights into **clear analytical sections**
+        """)
