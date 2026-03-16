@@ -1374,6 +1374,14 @@ with center:
         
         My aim is to continue improving my skills in **data analytics, machine learning, and dashboard development**, and build more practical projects that solve real-world problems using data.
         """)
+
+        st.markdown("""
+        ### Connect With Me
+                    
+        🔗 **GitHub:** [Pranay-256](https://github.com/Pranay-256)
+                    
+        💼 **LinkedIn:** [Pranay Jha](https://www.linkedin.com/in/pranay-jha-6582a937b/)
+        """)
         
         st.divider()
         
