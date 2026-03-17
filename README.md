@@ -197,7 +197,7 @@ streamlit run app.py
 
 ## 🎥 Video Demonstration
 
-👉 *(Add your demo video link here — YouTube / LinkedIn / Google Drive)*
+👉 *(https://www.linkedin.com/posts/pranay-jha-6582a937b_python-dataanalytics-streamlit-activity-7439706778315157504-x3Hk?utm_source=social_share_send&utm_medium=android_app&rcm=ACoAAF3WcmQB9hVmOjuNXqF2HqzoWwAQ15S44QY&utm_campaign=copy_link)*
 
 ---
 
