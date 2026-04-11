@@ -193,7 +193,7 @@ streamlit run app.py
 
 ## 🔗 Project Live Link
 
-👉 *(https://t20-format-team-performance-analysis.streamlit.app/)*
+👉 *(https://t20--team-performance-analyzer.streamlit.app/)*
 
 ## 🎥 Video Demonstration
 
