@@ -291,7 +291,7 @@ with center:
                             st.success("Dataset passed data validation")
 
                             df2 = df.copy()
-                            df2 = df2.dropna(subset=["Player_Name", "Match_No", "Batting_Position"], how="all")
+                            df2 = df2.dropna(subset=["Player_Name", "Batting_Position"], how="all")
 
                             # ── FIX 1: Normalize Role to lowercase so filters work
                             # regardless of how the user typed the role (Batsman / batsman / BATSMAN)
@@ -345,7 +345,7 @@ with center:
                 st.markdown(f"<p style='color:#9aa0a6; font-size:14px;'>{text}</p>", unsafe_allow_html=True)
 
             with st.expander("🙎 Match & Player Info", expanded=False):
-                column_info("Match_No", "Enter the match number to which the player's performance belongs. Null values are NOT recommended because every record must belong to a match, rows with null values will be dropped during cleaning. Preferred datatype: Integer.")
+                column_info("Match_No", "Enter the match number to which the player's performance belongs. Null values are NOT allowed because every record must belong to a match. Preferred datatype: Integer.")
                 column_info("Player_Name", "Enter the name of the player whose statistics are being recorded. Null values are NOT recommended when other player statistics are present, rows with null values will be dropped during cleaning. Preferred datatype: String.")
                 column_info("Role", "Enter the player's role such as batsman, bowler, or all-rounder. Null values are allowed but will automatically be filled with the most common role during data cleaning. Preferred datatype: String.")
 
