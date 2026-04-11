@@ -1,4 +1,4 @@
-# 🏏 T20 Cricket Team Performance Analysis Dashboard
+# 🏏 T20 Team Performance Analyzer
 
 🚀 An interactive **end-to-end data analytics dashboard** built using **Python & Streamlit** to analyze cricket team and player performance using structured match data.
 
