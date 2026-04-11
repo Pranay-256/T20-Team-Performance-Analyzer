@@ -291,7 +291,7 @@ with center:
                             st.success("Dataset passed data validation")
 
                             df2 = df.copy()
-                            df2 = df2.dropna(subset=["Player_Name", "Batting_Position"], how="all")
+                            df2 = df2.dropna(subset=["Player_Name"], how="all")
 
                             # ── FIX 1: Normalize Role to lowercase so filters work
                             # regardless of how the user typed the role (Batsman / batsman / BATSMAN)
@@ -350,7 +350,7 @@ with center:
                 column_info("Role", "Enter the player's role such as batsman, bowler, or all-rounder. Null values are allowed but will automatically be filled with the most common role during data cleaning. Preferred datatype: String.")
 
             with st.expander("🏏 Batting Info", expanded=False):
-                column_info("Batting_Position", "Enter the batting order position of the player (1-11). Null values are NOT recommended because batting order is required for analysis, rows with null values will be dropped during cleaning. Preferred datatype: Integer.")
+                column_info("Batting_Position", "Enter the batting order position of the player (1-11). Null values are NOT allowed because batting order is required for analysis. Preferred datatype: Integer.")
                 column_info("Batting_Start_Over", "Enter the over number when the player started batting. Null values are allowed only if the player did not bat in the match. Preferred datatype: Numeric.")
                 column_info("Out_Over", "Enter the over in which the player got out. If the player remained not-out, you may leave it blank or specify 'not-out'. Preferred datatype: Numeric or String.")
                 column_info("Balls_Played", "Enter the total number of balls faced by the player while batting. Null values are allowed only when the player did not bat. Preferred datatype: Integer.")
