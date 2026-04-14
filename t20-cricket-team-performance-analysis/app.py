@@ -418,7 +418,11 @@ def insight_line(number, text):
 # ─────────────────────────────────────────────────────────────
 # DATA VALIDATION
 # ─────────────────────────────────────────────────────────────
-def data_validation(df):
+def data_validation(df):        
+    out_over_numeric = pd.to_numeric(df["Out_Over"], errors="coerce")
+
+    invalid_over = out_over_numeric > 20
+
     bat_stats = (df["Batting_Start_Over"].isnull() &
                 (df["Out_Over"].notnull() |
                  df["Balls_Played"].notnull() |
@@ -426,6 +430,12 @@ def data_validation(df):
 
     bat_stats2 = (df["Batting_Start_Over"].notnull() &
                   (df["Out_Over"].isnull() | df["Balls_Played"].isnull() | df["Runs_Scored"].isnull()))
+
+    bat_stats3 = (
+        (df["Batting_Start_Over"].notnull()) &
+        (out_over_numeric.notnull()) &
+        (df["Batting_Start_Over"] > out_over_numeric)
+    )
 
     bowl_stats = ((df["Overs_Bowled"].isnull() | df["Overs_Bowled"] == 0) &
                   (df["Runs_Given"].notnull() | df["Wickets_Taken"].notnull()))
@@ -447,18 +457,72 @@ def data_validation(df):
     no_match    = df["Match_No"].isnull()
     no_position = df["Batting_Position"].isnull()
 
+    if invalid_over.any():
+        raise ValueError("Current Version only supports T20 data (Out_Over cannot exceed 20)")
     if no_match.any():
         raise ValueError("Some players don't have Match Number information")
     elif no_position.any():
         raise ValueError("Some players don't have Batting Position information")
     elif invalid_player.any():
         raise ValueError("Some players don't have their name")
-    elif (bat_stats.any()) or (bat_stats2.any()):
+    elif (bat_stats.any()) or (bat_stats2.any()) or (bat_stats3.any()):
         raise ValueError("Invalid data found in batting columns")
     elif (bowl_stats.any()) or (bowl_stats2.any()):
         raise ValueError("Invalid data found in bowling columns")
 
     return True
+
+# ─────────────────────────────────────────────────────────────
+# DATA PROCESSING (CACHED)
+# ─────────────────────────────────────────────────────────────
+@st.cache_data
+def process_data(df):
+
+    df2 = df.copy()
+
+    df2["Role"] = df2["Role"].str.strip().str.lower()
+    df2["Role"] = df2["Role"].fillna(df2["Role"].mode()[0])
+
+    df2["Batting_Start_Over"] = df2["Batting_Start_Over"].fillna(0)
+
+    df2["Out_Over"] = pd.to_numeric(df2["Out_Over"], errors="coerce")
+    df2["Out_Over"] = df2["Out_Over"].fillna(0)
+
+    df2["Balls_Played"] = df2["Balls_Played"].fillna(0)
+    df2["Runs_Scored"]  = df2["Runs_Scored"].fillna(0)
+    df2["Overs_Bowled"] = df2["Overs_Bowled"].fillna(0)
+
+    df2.loc[(df2["Overs_Bowled"] > 0) & (df2["Runs_Given"].isnull()), "Runs_Given"] = 0
+    df2.loc[(df2["Overs_Bowled"] > 0) & (df2["Wickets_Taken"].isnull()), "Wickets_Taken"] = 0
+
+    df2["Runs_Given"]    = df2["Runs_Given"].fillna(0)
+    df2["Wickets_Taken"] = df2["Wickets_Taken"].fillna(0)
+
+    df2["Batted"]  = df2["Batting_Start_Over"] > 0
+    df2["Was_Out"] = df2["Out_Over"] > 0
+
+    # Strike Rate
+    df2["Strike_Rate"] = 0.0
+    df2.loc[df2["Balls_Played"] > 0, "Strike_Rate"] = (
+        (df2["Runs_Scored"] / df2["Balls_Played"]) * 100
+    )
+    df2["Strike_Rate"] = df2["Strike_Rate"].round(2)
+
+    # Economy Rate (FIXED)
+    over  = df2["Overs_Bowled"].astype(int)
+    balls = ((df2["Overs_Bowled"] - over) * 10).round().astype(int)
+
+    df2["real_over"] = over + (balls / 6)
+
+    df2["Economy_Rate"] = 0.0
+    df2.loc[df2["real_over"] > 0, "Economy_Rate"] = (
+        df2["Runs_Given"] / df2["real_over"]
+    )
+
+    df2.drop(columns=["real_over"], inplace=True)
+    df2["Economy_Rate"] = df2["Economy_Rate"].round(2)
+
+    return df2
 
 # ─────────────────────────────────────────────────────────────
 # FOOTER
@@ -651,51 +715,13 @@ with center:
 
                         try:
                             data_validation(df)
-                            st.success("Dataset passed data validation.")
-
-                            df2 = df.copy()
-
-                            df2["Role"] = df2["Role"].str.strip().str.lower()
-                            df2["Role"] = df2["Role"].fillna(df2["Role"].mode()[0])
-
-                            df2["Batting_Start_Over"] = df2["Batting_Start_Over"].fillna(0)
-                            df2["Out_Over"]           = df2["Out_Over"].fillna(0)
-                            df2["Balls_Played"]       = df2["Balls_Played"].fillna(0)
-                            df2["Runs_Scored"]        = df2["Runs_Scored"].fillna(0)
-                            df2["Overs_Bowled"]       = df2["Overs_Bowled"].fillna(0)
-
-                            df2.loc[(df2["Overs_Bowled"] > 0) & (df2["Runs_Given"].isnull()),    "Runs_Given"]    = 0
-                            df2.loc[(df2["Overs_Bowled"] > 0) & (df2["Wickets_Taken"].isnull()), "Wickets_Taken"] = 0
-                            df2["Runs_Given"]    = df2["Runs_Given"].fillna(0)
-                            df2["Wickets_Taken"] = df2["Wickets_Taken"].fillna(0)
-
-                            df2["Was_Out"] = (
-                                (df2["Batting_Start_Over"] > 0) &
-                                ((df2["Out_Over"] != "not-out") | (df2["Out_Over"].notnull()))
-                            )
-
-                            df2["Strike_Rate"] = (
-                                (df2["Runs_Scored"] / df2["Balls_Played"]) * 100
-                            ).round(2)
-
-                            def economy_calc(df2):
-                                over  = df2["Overs_Bowled"].astype(int)
-                                balls = (df2["Overs_Bowled"] - over) * 10
-                                df2["real_over"] = over + (balls / 6)
-                                df2["Economy_Rate"] = 0.0
-                                df2.loc[df2["real_over"] > 0, "Economy_Rate"] = (
-                                    df2["Runs_Given"] / df2["real_over"]
-                                )
-                                df2.drop(columns=["real_over"], inplace=True)
-                                df2["Economy_Rate"] = df2["Economy_Rate"].round(2)
-                                return df2
-
-                            df2 = economy_calc(df2)
-
+                            st.success(f"Dataset passed data validation | {df.shape[0]} rows loaded")
+                           
+                            df2 = process_data(df)
+                           
                             st.success("Data cleaning and feature engineering completed.")
                             st.session_state.df2 = df2
-
-                        except Exception as err:
+                        except Exception as err:      
                             st.error(f"Dataset is invalid: {err}")
 
             st.divider()
@@ -1003,12 +1029,12 @@ with center:
                 # ── Phase-wise wickets lost ──
                 section_heading("🔻", "Phase-wise Wickets Lost Breakdown")
 
-                wickets_df = df2[df2["Was_Out"] == True].copy()
+                wickets_df = df2[(df2["Was_Out"] == True) & (df2["Out_Over"] > 0)].copy()
                 wickets_df["Out_Over"] = pd.to_numeric(wickets_df["Out_Over"], errors="coerce")
 
                 def assign_phase(over):
-                    if over <= 6:    return "Powerplay"
-                    elif over <= 15: return "Middle Overs"
+                    if (over > 0) & (over <= 6):    return "Powerplay"
+                    elif (over > 6) & (over <= 15): return "Middle Overs"
                     else:            return "Death Overs"
 
                 wickets_df["Wicket_Phase"] = wickets_df["Out_Over"].apply(assign_phase)
