@@ -3,59 +3,435 @@ import streamlit.components.v1 as components
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+import matplotlib as mpl
+import matplotlib.patches as mpatches
 import seaborn as sns
 import warnings
 warnings.filterwarnings("ignore")
 
-# Session state storage for dataset
+# ─────────────────────────────────────────────────────────────
+# SESSION STATE
+# ─────────────────────────────────────────────────────────────
 if "df2" not in st.session_state:
     st.session_state.df2 = None
 
-# -------------------------------------------------
+# ─────────────────────────────────────────────────────────────
 # PAGE CONFIG
-# -------------------------------------------------
-
+# ─────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="T20 Cricket Team Performance Analyzer",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
 
+# ─────────────────────────────────────────────────────────────
+# GLOBAL CSS
+# ─────────────────────────────────────────────────────────────
 st.markdown("""
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,300&display=swap" rel="stylesheet">
+
 <style>
 
-div.stButton > button {
-    background-color: #ff4b4b;
-    color: white;
-    font-weight: 600;
-    border-radius: 8px;
-    height: 45px;
-    border: none;
+/* ── Root tokens ─────────────────────────────────────────── */
+:root {
+    --bg-base:      #0d1117;
+    --bg-card:      #161b22;
+    --bg-card2:     #1c2330;
+    --border:       #2a3444;
+    --gold:         #c9a84c;
+    --gold-light:   #e0c070;
+    --teal:         #2dd4bf;
+    --teal-dim:     #1a9e8f;
+    --text-primary: #e6edf3;
+    --text-muted:   #8b949e;
+    --text-accent:  #c9a84c;
+    --danger:       #e05252;
+    --success:      #3fb950;
+    --tab-active:   #c9a84c;
 }
 
-div.stButton > button:hover {
-    background-color: #e63939;
+/* ── Base ────────────────────────────────────────────────── */
+html, body, [class*="css"] {
+    font-family: 'Rajdhani', sans-serif !important;
+    background-color: var(--bg-base) !important;
+    color: var(--text-primary) !important;
 }
+
+/* ── Streamlit chrome overrides ──────────────────────────── */
+.stApp { background-color: var(--bg-base) !important; }
+header[data-testid="stHeader"] { background: var(--bg-base) !important; border-bottom: 1px solid var(--border); }
+
+/* ── FIX #6: Shift content up — reduce top padding ──────── */
+.main .block-container {
+    padding-top: 1rem !important;
+    padding-bottom: 1rem !important;
+}
+
+/* ── FIX #1: Dataframe visibility fix ───────────────────── */
+/* ── SAFE DATAFRAME STYLING (STREAMLIT-COMPATIBLE) ── */
+
+/* Outer container */
+div[data-testid="stDataFrame"] {
+    border: 1px solid var(--border) !important;
+    border-radius: 10px !important;
+    background: var(--bg-card) !important;
+    padding: 4px;
+}
+
+/* Inner wrapper */
+div[data-testid="stDataFrame"] > div {
+    background: var(--bg-card) !important;
+}
+
+/* Text color (safe override) */
+div[data-testid="stDataFrame"] * {
+    color: var(--text-primary) !important;
+}
+
+/* Header styling (optional premium touch) */
+div[data-testid="stDataFrame"] thead {
+    background: rgba(201,168,76,0.08) !important;
+}
+
+/* Scrollbar inside dataframe */
+div[data-testid="stDataFrame"] ::-webkit-scrollbar {
+    height: 6px;
+    width: 6px;
+}
+
+div[data-testid="stDataFrame"] ::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 4px;
+}
+
+div[data-testid="stDataFrame"] ::-webkit-scrollbar-thumb:hover {
+    background: var(--gold);
+}
+
+/* ── FIX #2: Tab buttons look like real buttons ──────────── */
+/* ── PREMIUM BUTTON-LIKE TABS ─────────────────────────── */
+
+/* ── MINIMAL PREMIUM TABS (LIKE STREAMLIT DEFAULT) ───────── */
+
+div[data-baseweb="tab-list"] {
+    border-bottom: 1px solid var(--border) !important;
+    gap: 18px;
+}
+
+/* Individual tabs */
+div[data-baseweb="tab"] {
+    font-family: 'Rajdhani', sans-serif !important;
+    font-weight: 600;
+    font-size: 16px !important;
+
+    color: var(--text-muted) !important;
+
+    padding: 10px 6px !important;
+    background: transparent !important;
+    border: none !important;
+
+    transition: all 0.2s ease;
+}
+
+/* Hover effect (subtle, not button-like) */
+div[data-baseweb="tab"]:hover {
+    color: var(--gold-light) !important;
+}
+
+/* ACTIVE TAB */
+div[data-baseweb="tab"][aria-selected="true"] {
+    color: var(--gold) !important;
+    font-weight: 700 !important;
+}
+
+/* 🔥 GOLD UNDERLINE (THIS IS THE KEY PART) */
+div[data-baseweb="tab-highlight"] {
+    background: linear-gradient(90deg, #c9a84c, #e0c070) !important;
+    height: 3px !important;
+    border-radius: 2px;
+}
+
+/* remove default border line artifacts */
+div[data-baseweb="tab-border"] {
+    background: transparent !important;
+}
+
+/* ── Sidebar ─────────────────────────────────────────────── */
+section[data-testid="stSidebar"] {
+    background: var(--bg-card) !important;
+    border-right: 1px solid var(--border) !important;
+}
+section[data-testid="stSidebar"] * { color: var(--text-primary) !important; }
+
+/* ── Radio buttons ───────────────────────────────────────── */
+div[role="radiogroup"] label {
+    font-family: 'Rajdhani', sans-serif !important;
+    color: var(--text-primary) !important;
+    font-size: 14px;
+}
+
+/* ── Buttons ─────────────────────────────────────────────── */
+div.stButton > button {
+    font-family: 'Rajdhani', sans-serif !important;
+    font-weight: 700;
+    font-size: 15px;
+    letter-spacing: 0.5px;
+    background: linear-gradient(135deg, #b8922e 0%, #e0c070 100%) !important;
+    color: #0d1117 !important;
+    border: none !important;
+    border-radius: 8px !important;
+    height: 46px !important;
+    transition: all 0.25s ease !important;
+    box-shadow: 0 2px 12px rgba(201,168,76,0.15) !important;
+}
+div.stButton > button:hover {
+    background: linear-gradient(135deg, #e0c070 0%, #c9a84c 100%) !important;
+    box-shadow: 0 4px 20px rgba(201,168,76,0.30) !important;
+    transform: translateY(-1px) !important;
+}
+
+/* ── Download buttons ────────────────────────────────────── */
+div.stDownloadButton > button {
+    font-family: 'Rajdhani', sans-serif !important;
+    font-weight: 500;
+    font-size: 14px;
+    background: transparent !important;
+    color: var(--teal) !important;
+    border: 1px solid var(--teal-dim) !important;
+    border-radius: 7px !important;
+    height: 40px !important;
+    transition: all 0.2s ease !important;
+}
+div.stDownloadButton > button:hover {
+    background: rgba(45,212,191,0.08) !important;
+    border-color: var(--teal) !important;
+    box-shadow: 0 0 10px rgba(45,212,191,0.15) !important;
+}
+
+/* ── Selectbox ───────────────────────────────────────────── */
+div[data-baseweb="select"] > div {
+    background: var(--bg-card2) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: 8px !important;
+    color: var(--text-primary) !important;
+}
+div[data-baseweb="select"] span { color: var(--text-primary) !important; }
+
+/* ── Expanders ───────────────────────────────────────────── */
+div[data-testid="stExpander"] {
+    background: var(--bg-card) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: 10px !important;
+    margin-bottom: 10px;
+}
+div[data-testid="stExpander"] summary {
+    font-family: 'Rajdhani', sans-serif !important;
+    font-weight: 600 !important;
+    font-size: 16px !important;
+    color: var(--gold-light) !important;
+    padding: 12px 16px !important;
+}
+div[data-testid="stExpander"] summary:hover {
+    background: rgba(201,168,76,0.06) !important;
+}
+div[data-testid="stExpander"] > div > div {
+    padding: 4px 20px 16px 20px !important;
+    color: var(--text-primary) !important;
+}
+
+/* ── Alerts / messages ───────────────────────────────────── */
+div[data-testid="stAlert"] {
+    border-radius: 8px !important;
+    font-family: 'Rajdhani', sans-serif !important;
+}
+
+/* ── Dividers ────────────────────────────────────────────── */
+hr { border-color: var(--border) !important; }
+
+/* ── Pyplot figures background ───────────────────────────── */
+div[data-testid="stImage"] img { border-radius: 8px; }
+
+/* ── File uploader ───────────────────────────────────────── */
+div[data-testid="stFileUploader"] {
+    background: var(--bg-card2) !important;
+    border: 1px dashed var(--border) !important;
+    border-radius: 10px !important;
+    padding: 8px;
+}
+div[data-testid="stFileUploader"] * { color: var(--text-primary) !important; }
+
+/* ── FIX #5: Markdown / body text font → Rajdhani ────────── */
+p, li {
+    color: var(--text-primary) !important;
+    font-family: 'Rajdhani', sans-serif !important;
+    font-size: 15px;
+    line-height: 1.7;
+}
+strong { color: var(--text-primary) !important; font-family: 'Rajdhani', sans-serif !important; }
+a { color: var(--teal) !important; text-decoration: none; }
+a:hover { text-decoration: underline; color: var(--gold-light) !important; }
+
+/* ── Scrollbar ───────────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--bg-base); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: var(--gold); }
 
 </style>
 """, unsafe_allow_html=True)
 
-# -------------------------------------------------
-# DATA VALIDATION FUNCTION
-# -------------------------------------------------
+# ─────────────────────────────────────────────────────────────
+# CHART THEME
+# ─────────────────────────────────────────────────────────────
+mpl.rcParams.update({
+    "font.family":       "DejaVu Sans",
+    "axes.titlesize":    14,
+    "axes.titleweight":  "bold",
+    "axes.labelsize":    11,
+    "xtick.labelsize":   9,
+    "ytick.labelsize":   9,
+    "legend.fontsize":   9,
+    "legend.framealpha": 1.0,
+    "legend.edgecolor":  "#000000",
+    "legend.facecolor":  "#ffffff",
+    "legend.labelcolor": "#000000",
+    "legend.title_fontsize": 9,
+})
 
+# ─────────────────────────────────────────────────────────────
+# COLOUR PALETTES — thematically matched per chart
+# ─────────────────────────────────────────────────────────────
+# Batting: warm gold→amber tones (runs = fire)
+BATTING_CMAP   = "YlOrRd"
+# Bowling: cool blue→teal tones (precision = cool)
+BOWLING_CMAP   = "YlGnBu"
+# Phase pie: distinct qualitative
+PHASE_COLORS   = ["#e05252", "#e0c070", "#3fb950"]
+# Role pie (batting): warm earthy
+ROLE_BAT_COLORS = ["#c9a84c", "#dd8452", "#4c9be8"]
+# Role pie (bowling): cool blues
+ROLE_BOWL_COLORS = ["#2dd4bf", "#4c72b0", "#c9a84c"]
+# Batting order: viridis stays
+ORDER_PAL      = "viridis"
+# Runs per match / wickets per match: gold line already set
+# Strike rate — role split colours (kept readable)
+SR_ROLE_COLORS = {"batsman": "#c9a84c", "all-rounder": "#2dd4bf"}
+ECO_ROLE_COLORS = {"bowler": "#4c72b0", "all-rounder": "#2dd4bf"}
+
+# ─────────────────────────────────────────────────────────────
+# CHART FIGURE WIDTH  — matches dataframe width in pixels
+# The dataframe uses use_container_width=True so we set figsize
+# to fill the same space. DPI=120 keeps it sharp.
+# ─────────────────────────────────────────────────────────────
+BAR_W, BAR_H   = 10, 5      # horizontal bar charts
+LINE_W, LINE_H = 8,  5      # line charts
+PIE_W,  PIE_H  = 8,  6      # pie charts
+SIDE_W, SIDE_H = 10, 4      # side-by-side (summary)
+
+# ─────────────────────────────────────────────────────────────
+# HELPER: section heading banner
+# ─────────────────────────────────────────────────────────────
+def section_heading(icon, title):
+    st.markdown(f"""
+    <div style="
+        background: linear-gradient(90deg, rgba(201,168,76,0.12) 0%, transparent 100%);
+        border-left: 3px solid #c9a84c;
+        border-radius: 0 8px 8px 0;
+        padding: 10px 18px;
+        margin: 18px 0 10px 0;
+    ">
+        <span style="font-family:'Rajdhani',sans-serif; font-weight:700;
+                     font-size:20px; color:#e0c070; letter-spacing:0.4px;">
+            {icon}&nbsp; {title}
+        </span>
+    </div>
+    """, unsafe_allow_html=True)
+
+# ─────────────────────────────────────────────────────────────
+# HELPER: column info card
+# ─────────────────────────────────────────────────────────────
+def column_info(title, text):
+    st.markdown(f"""
+    <div style="
+        background: #1c2330;
+        border: 1px solid #2a3444;
+        border-radius: 8px;
+        padding: 10px 16px;
+        margin-bottom: 8px;
+    ">
+        <p style="font-family:'Rajdhani',sans-serif; font-weight:700;
+                  font-size:15px; color:#c9a84c; margin:0 0 4px 0;">{title}</p>
+        <p style="font-family:'Rajdhani',sans-serif; font-size:13px;
+                  color:#8b949e; margin:0; line-height:1.55;">{text}</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+# ─────────────────────────────────────────────────────────────
+# HELPER: KPI card
+# ─────────────────────────────────────────────────────────────
+def kpi_card(icon, label, value, sub=""):
+    sub_html = f"<p style='font-size:12px; color:#8b949e; margin:2px 0 0 0; font-family:Rajdhani,sans-serif;'>{sub}</p>" if sub else ""
+    st.markdown(f"""
+    <div style="
+        background: linear-gradient(145deg, #1c2330, #161b22);
+        border: 1px solid #2a3444;
+        border-top: 2px solid #c9a84c;
+        border-radius: 10px;
+        padding: 16px 18px;
+        text-align: center;
+        height: 100%;
+        box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+    ">
+        <div style="font-size:26px; margin-bottom:6px;">{icon}</div>
+        <p style="font-family:'Rajdhani',sans-serif; font-size:12px;
+                  color:#8b949e; margin:0 0 4px 0; text-transform:uppercase;
+                  letter-spacing:0.8px;">{label}</p>
+        <p style="font-family:'Rajdhani',sans-serif; font-weight:700;
+                  font-size:22px; color:#e0c070; margin:0; line-height:1.1;">{value}</p>
+        {sub_html}
+    </div>
+    """, unsafe_allow_html=True)
+
+# ─────────────────────────────────────────────────────────────
+# HELPER: insight line
+# ─────────────────────────────────────────────────────────────
+def insight_line(number, text):
+    st.markdown(f"""
+    <div style="
+        background: #161b22;
+        border: 1px solid #2a3444;
+        border-left: 3px solid #2dd4bf;
+        border-radius: 0 8px 8px 0;
+        padding: 10px 16px;
+        margin-bottom: 8px;
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+    ">
+        <span style="font-family:'Rajdhani',sans-serif; font-weight:700;
+                     font-size:16px; color:#2dd4bf; min-width:24px;">{number}.</span>
+        <span style="font-family:'Rajdhani',sans-serif; font-size:14px;
+                     color:#e6edf3; line-height:1.6;">{text}</span>
+    </div>
+    """, unsafe_allow_html=True)
+
+# ─────────────────────────────────────────────────────────────
+# DATA VALIDATION
+# ─────────────────────────────────────────────────────────────
 def data_validation(df):
-
     bat_stats = (df["Batting_Start_Over"].isnull() &
                 (df["Out_Over"].notnull() |
                  df["Balls_Played"].notnull() |
                  df["Runs_Scored"].notnull()))
 
     bat_stats2 = (df["Batting_Start_Over"].notnull() &
-                  (df["Out_Over"].isnull()))
+                  (df["Out_Over"].isnull() | df["Balls_Played"].isnull() | df["Runs_Scored"].isnull()))
 
     bowl_stats = ((df["Overs_Bowled"].isnull() | df["Overs_Bowled"] == 0) &
                   (df["Runs_Given"].notnull() | df["Wickets_Taken"].notnull()))
+    
+    bowl_stats2 = ((df["Overs_Bowled"].notnull()) &
+                  (df["Runs_Given"].isnull() | df["Wickets_Taken"].isnull()))
 
     invalid_player = ((df["Player_Name"].isnull()) &
                      (df["Role"].notnull() |
@@ -68,7 +444,7 @@ def data_validation(df):
                       df["Runs_Given"].notnull() |
                       df["Wickets_Taken"].notnull()))
 
-    no_match = df["Match_No"].isnull()
+    no_match    = df["Match_No"].isnull()
     no_position = df["Batting_Position"].isnull()
 
     if no_match.any():
@@ -79,238 +455,223 @@ def data_validation(df):
         raise ValueError("Some players don't have their name")
     elif (bat_stats.any()) or (bat_stats2.any()):
         raise ValueError("Invalid data found in batting columns")
-    elif bowl_stats.any():
+    elif (bowl_stats.any()) or (bowl_stats2.any()):
         raise ValueError("Invalid data found in bowling columns")
 
     return True
 
-
-# -------------------------------------------------
-# FOOTER FUNCTION
-# -------------------------------------------------
-
+# ─────────────────────────────────────────────────────────────
+# FOOTER
+# ─────────────────────────────────────────────────────────────
 def render_footer():
-    components.html(
-        """
-        <style>
-            body { margin: 0; padding: 0; font-family: sans-serif; }
+    components.html("""
+    <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@600;700&family=DM+Sans:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        body { margin:0; padding:0; background:transparent; }
 
-            .footer-wrapper {
-                display: flex;
-                justify-content: space-around;
-                text-align: center;
-                padding: 30px 0 10px 0;
-            }
+        .footer-wrapper {
+            display: flex;
+            justify-content: space-around;
+            text-align: center;
+            padding: 28px 0 8px 0;
+            border-top: 1px solid #2a3444;
+        }
 
-            .footer-item { flex: 1; }
+        .footer-item { flex: 1; }
 
-            .footer-item .title {
-                font-weight: 600;
-                font-size: 18px;
-                color: #ffffff;
-                margin-bottom: 4px;
-            }
+        .footer-item .title {
+            font-family: 'Rajdhani', sans-serif;
+            font-weight: 700;
+            font-size: 16px;
+            color: #c9a84c;
+            margin-bottom: 4px;
+        }
 
-            .footer-item .subtitle {
-                color: #9aa0a6;
-                font-size: 14px;
-                margin-top: 0;
-            }
+        .footer-item .subtitle {
+            font-family: 'Rajdhani', sans-serif;
+            color: #8b949e;
+            font-size: 13px;
+            margin-top: 0;
+        }
 
-            .footer-credit {
-                text-align: center;
-                color: #9aa0a6;
-                font-size: 14px;
-                padding: 12px 0 5px 0;
-            }
-        </style>
+        .footer-credit {
+            text-align: center;
+            font-family: 'Rajdhani', sans-serif;
+            color: #8b949e;
+            font-size: 13px;
+            padding: 12px 0 4px 0;
+        }
+    </style>
 
-        <div class="footer-wrapper">
-            <div class="footer-item">
-                <p class="title">&#128274; Secure &amp; Reliable</p>
-                <p class="subtitle">Your data is processed securely</p>
-            </div>
-
-            <div class="footer-item">
-                <p class="title">&#9889; Real Time Results</p>
-                <p class="subtitle">Instant results in seconds</p>
-            </div>
-
-            <div class="footer-item">
-                <p class="title">&#128200; 100% Accuracy</p>
-                <p class="subtitle">Get 100% accurate Insights</p>
-            </div>
+    <div class="footer-wrapper">
+        <div class="footer-item">
+            <p class="title">&#128274; Secure &amp; Reliable</p>
+            <p class="subtitle">Your data is processed securely</p>
         </div>
+        <div class="footer-item">
+            <p class="title">&#9889; Real Time Results</p>
+            <p class="subtitle">Instant results in seconds</p>
+        </div>
+        <div class="footer-item">
+            <p class="title">&#128200; 100% Accuracy</p>
+            <p class="subtitle">Get 100% accurate Insights</p>
+        </div>
+    </div>
 
-        <p class="footer-credit">Developed by Pranay Jha | Powered by Python and Streamlit</p>
-        """,
-        height=200,
-    )
+    <p class="footer-credit">Developed by Pranay Jha &nbsp;|&nbsp; Powered by Python and Streamlit</p>
+    """, height=180)
 
-
-# -------------------------------------------------
+# ─────────────────────────────────────────────────────────────
 # SIDEBAR
-# -------------------------------------------------
-
+# ─────────────────────────────────────────────────────────────
 with st.sidebar:
+    st.markdown("""
+    <div style='text-align:center; padding:12px 0 8px 0;'>
+        <span style="font-family:'Rajdhani',sans-serif; font-size:28px;
+                     font-weight:700; color:#c9a84c; letter-spacing:1px;">
+            🏏 Tool Menu
+        </span>
+    </div>
+    """, unsafe_allow_html=True)
 
-    st.markdown(
-            """
-            <div style='text-align:center; font-size:30px; font-weight:bold;'>
-                 Tool Menu
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
+    page = st.radio("", ["Analyze your Dataset", "About"])
 
-    page = st.radio("",["Analyze your Dataset","About"])
+    st.markdown("<hr style='border-color:#2a3444; margin:12px 0;'>", unsafe_allow_html=True)
 
-    st.markdown("---")
+    st.markdown("""
+    <div style="font-family:'Rajdhani',sans-serif; font-size:13px;
+                color:#8b949e; line-height:1.9; padding:4px 0;">
+        <strong style="color:#c9a84c;">Current Version:</strong> 2.01<br>
+        <strong style="color:#c9a84c;">Last Updated:</strong> 14th April 2026<br>
+        <strong style="color:#c9a84c;">Initial Release:</strong> 27th February 2026
+    </div>
+    """, unsafe_allow_html=True)
 
-    st.markdown(
-        """
-        **Current Version : 2.01**
+# ─────────────────────────────────────────────────────────────
+# MAIN PAGE
+# ─────────────────────────────────────────────────────────────
+left, center, right = st.columns([1, 3, 1])
 
-        **Last Updated On : 11th April 2026**
-
-        **Initial Release : 27th February 2026**
-        """
-    )
-
-
-# -------------------------------------------------
-# MAIN PAGE CONTENT
-# -------------------------------------------------
-
-left, center, right = st.columns([1,3,1])
 with center:
 
+    # ══════════════════════════════════════════════════════
+    # ANALYZE PAGE
+    # ══════════════════════════════════════════════════════
     if page == "Analyze your Dataset":
 
-        st.markdown(
-            """
-            <h2 style='text-align:center;'>&#127951; T20 Team Performance Analyzer</h2> 
-            """,
-            unsafe_allow_html=True
-        )
-
-        st.markdown(
-            """
-            <p style='text-align:center; color:gray; font-size:18px;'>
-            Data-Driven Analysis of Your T20 Team Performance
+        st.markdown("""
+        <div style="text-align:center; padding:24px 0 6px 0;">
+            <h1 style="font-family:'Rajdhani',sans-serif; font-weight:700;
+                       font-size:38px; color:#e0c070; margin:0; letter-spacing:1px;">
+                🏏 T20 Team Performance Analyzer
+            </h1>
+            <p style="font-family:'Rajdhani',sans-serif; font-size:16px;
+                      color:#8b949e; margin:6px 0 0 0;">
+                Data-Driven Analysis of Your T20 Team Performance
             </p>
-            """,
-            unsafe_allow_html=True
-        )
+        </div>
+        """, unsafe_allow_html=True)
 
         st.markdown("")
 
         tab1, tab2, tab3, tab4 = st.tabs(
-            ["📊 Dataset","🏏 Batting Analytics","⚾ Bowling Analytics","📋 Summary"]
+            ["📊 Dataset", "🏏 Batting Analytics", "⚾ Bowling Analytics", "📋 Summary"]
         )
 
-        # ======================================================
-        # DATASET TAB
-        # ======================================================
-
+        # ══════════════════════════════════════════════════
+        # TAB 1 — DATASET
+        # ══════════════════════════════════════════════════
         with tab1:
 
-            st.markdown(
-                "<span style='color:gray;'>supports .csv and .xlsx file formats</span>",
-                unsafe_allow_html=True
-            )
+            st.markdown("""
+            <p style="color:#8b949e; font-size:13px; margin:6px 0 4px 0;">
+                Supports <code style="color:#2dd4bf;">.csv</code> and
+                <code style="color:#2dd4bf;">.xlsx</code> file formats
+            </p>
+            """, unsafe_allow_html=True)
 
-            with open("template.csv","rb") as f:
-                st.download_button("Download Template Dataset", f, "template.csv")
+            with open("template.csv", "rb") as f:
+                st.download_button("⬇ Download Template Dataset", f, "template.csv")
 
-            st.markdown(
-                "<p style='color:gray; font-size:14px;'>Download the template dataset, fill in your match data, and upload it here</p>",
-                unsafe_allow_html=True
-            )
+            st.markdown("""
+            <p style="color:#8b949e; font-size:13px;">
+                Download the template dataset, fill in your match data, and upload it here.
+            </p>
+            """, unsafe_allow_html=True)
+
             st.divider()
 
-            st.subheader("Upload your Files")
+            st.markdown("""
+            <p style="font-family:'Rajdhani',sans-serif; font-weight:700;
+                      font-size:20px; color:#e0c070; margin:4px 0 8px 0;">
+                Upload Your Files
+            </p>
+            <p style="color:#8b949e; font-size:13px; margin-bottom:10px;">
+                For testing refer to the example datasets attached below.
+            </p>
+            """, unsafe_allow_html=True)
 
-            st.markdown(
-                "<p style='color:#9aa0a6; font-size:14px;'>For testing purpose refer to the example datasets attached below</p>",
-                unsafe_allow_html=True
-            )
-
-            upload_type = st.radio("", ["Upload Single Dataset","Upload Multiple Datasets"])
-
+            upload_type    = st.radio("", ["Upload Single Dataset", "Upload Multiple Datasets"])
             uploaded_files = None
 
             if upload_type == "Upload Single Dataset":
-                uploaded_files = st.file_uploader("Upload Single Dataset", type=["csv","xlsx"], accept_multiple_files=False)
+                uploaded_files = st.file_uploader("Upload Single Dataset",  type=["csv","xlsx"], accept_multiple_files=False)
             else:
                 uploaded_files = st.file_uploader("Upload Multiple Datasets", type=["csv","xlsx"], accept_multiple_files=True)
 
-            st.markdown(
-                "<p style='color:#9aa0a6; font-size:14px;'>A single dataset may contain data from one match or multiple matches combined.</p>",
-                unsafe_allow_html=True
-            )
+            st.markdown("""
+            <p style="color:#8b949e; font-size:13px; margin-top:6px;">
+                A single dataset may contain data from one match or multiple matches combined.
+            </p>
+            """, unsafe_allow_html=True)
 
             confirm = st.button("Confirm Upload", use_container_width=True)
 
             if confirm:
-
                 st.session_state.df2 = None
 
                 if uploaded_files is None:
-                    st.error("Please upload dataset first")
-
+                    st.error("Please upload a dataset first.")
                 else:
-
                     all_datasets = []
 
                     if not isinstance(uploaded_files, list):
                         file = uploaded_files
-                        if file.name.endswith(".csv"):
-                            df_temp = pd.read_csv(file)
-                        else:
-                            df_temp = pd.read_excel(file)
+                        df_temp = pd.read_csv(file) if file.name.endswith(".csv") else pd.read_excel(file)
                         all_datasets.append(df_temp)
                     else:
                         for file in uploaded_files:
-                            if file.name.endswith(".csv"):
-                                df_temp = pd.read_csv(file)
-                            else:
-                                df_temp = pd.read_excel(file)
+                            df_temp = pd.read_csv(file) if file.name.endswith(".csv") else pd.read_excel(file)
                             all_datasets.append(df_temp)
 
                     if len(all_datasets) == 0:
-                        st.error("No dataset loaded")
-
+                        st.error("No dataset loaded.")
                     else:
-
                         df = pd.concat(all_datasets, ignore_index=True)
 
                         try:
-
                             data_validation(df)
-                            st.success("Dataset passed data validation")
+                            st.success("Dataset passed data validation.")
 
                             df2 = df.copy()
 
-                            # ── FIX 1: Normalize Role to lowercase so filters work
-                            # regardless of how the user typed the role (Batsman / batsman / BATSMAN)
                             df2["Role"] = df2["Role"].str.strip().str.lower()
-
                             df2["Role"] = df2["Role"].fillna(df2["Role"].mode()[0])
-                            df2["Batting_Start_Over"] = df2["Batting_Start_Over"].fillna(0)
-                            df2["Out_Over"] = df2["Out_Over"].fillna(0)
-                            df2["Balls_Played"] = df2["Balls_Played"].fillna(0)
-                            df2["Runs_Scored"] = df2["Runs_Scored"].fillna(0)
-                            df2["Overs_Bowled"] = df2["Overs_Bowled"].fillna(0)
 
-                            df2.loc[(df2["Overs_Bowled"] > 0) & (df2["Runs_Given"].isnull()), "Runs_Given"] = 0
+                            df2["Batting_Start_Over"] = df2["Batting_Start_Over"].fillna(0)
+                            df2["Out_Over"]           = df2["Out_Over"].fillna(0)
+                            df2["Balls_Played"]       = df2["Balls_Played"].fillna(0)
+                            df2["Runs_Scored"]        = df2["Runs_Scored"].fillna(0)
+                            df2["Overs_Bowled"]       = df2["Overs_Bowled"].fillna(0)
+
+                            df2.loc[(df2["Overs_Bowled"] > 0) & (df2["Runs_Given"].isnull()),    "Runs_Given"]    = 0
                             df2.loc[(df2["Overs_Bowled"] > 0) & (df2["Wickets_Taken"].isnull()), "Wickets_Taken"] = 0
-                            df2["Runs_Given"] = df2["Runs_Given"].fillna(0)
+                            df2["Runs_Given"]    = df2["Runs_Given"].fillna(0)
                             df2["Wickets_Taken"] = df2["Wickets_Taken"].fillna(0)
 
                             df2["Was_Out"] = (
                                 (df2["Batting_Start_Over"] > 0) &
-                                (df2["Out_Over"] != "not-out")
+                                ((df2["Out_Over"] != "not-out") | (df2["Out_Over"].notnull()))
                             )
 
                             df2["Strike_Rate"] = (
@@ -318,18 +679,20 @@ with center:
                             ).round(2)
 
                             def economy_calc(df2):
-                                over = df2["Overs_Bowled"].astype(int)
+                                over  = df2["Overs_Bowled"].astype(int)
                                 balls = (df2["Overs_Bowled"] - over) * 10
                                 df2["real_over"] = over + (balls / 6)
                                 df2["Economy_Rate"] = 0.0
-                                df2.loc[df2["real_over"] > 0, "Economy_Rate"] = df2["Runs_Given"] / df2["real_over"]
+                                df2.loc[df2["real_over"] > 0, "Economy_Rate"] = (
+                                    df2["Runs_Given"] / df2["real_over"]
+                                )
                                 df2.drop(columns=["real_over"], inplace=True)
                                 df2["Economy_Rate"] = df2["Economy_Rate"].round(2)
                                 return df2
 
                             df2 = economy_calc(df2)
 
-                            st.success("Data cleaning and feature engineering completed")
+                            st.success("Data cleaning and feature engineering completed.")
                             st.session_state.df2 = df2
 
                         except Exception as err:
@@ -337,56 +700,61 @@ with center:
 
             st.divider()
 
-            st.subheader("Dataset Columns Overview")
-
-            def column_info(title, text):
-                st.markdown(f"<p style='font-weight:bold;'>{title}</p>", unsafe_allow_html=True)
-                st.markdown(f"<p style='color:#9aa0a6; font-size:14px;'>{text}</p>", unsafe_allow_html=True)
+            st.markdown("""
+            <p style="font-family:'Rajdhani',sans-serif; font-weight:700;
+                      font-size:20px; color:#e0c070; margin:4px 0 10px 0;">
+                Dataset Columns Overview
+            </p>
+            """, unsafe_allow_html=True)
 
             with st.expander("🙎 Match & Player Info", expanded=False):
-                column_info("Match_No", "Enter the match number to which the player's performance belongs. Null values are NOT allowed because every record must belong to a match. Preferred datatype: Integer.")
-                column_info("Player_Name", "Enter the name of the player whose statistics are being recorded. Null values are NOT allowed because every record must belong to a player. Preferred datatype: String.")
-                column_info("Role", "Enter the player's role such as batsman, bowler, or all-rounder. Null values are allowed but will automatically be filled with the most common role during data cleaning. Preferred datatype: String.")
+                column_info("Match_No",    "Enter the match number to which the player's performance belongs. Null values are NOT allowed. Preferred datatype: Integer.")
+                column_info("Player_Name", "Enter the name of the player whose statistics are being recorded. Null values are NOT allowed. Preferred datatype: String.")
+                column_info("Role",        "Enter the player's role — batsman, bowler, or all-rounder. Null values are allowed and will be auto-filled with the most common role. Preferred datatype: String.")
 
             with st.expander("🏏 Batting Info", expanded=False):
-                column_info("Batting_Position", "Enter the batting order position of the player (1-11). Null values are NOT allowed because batting order is required for analysis. Preferred datatype: Integer.")
-                column_info("Batting_Start_Over", "Enter the over number when the player started batting. Null values are allowed only if the player did not bat in the match. Preferred datatype: Numeric.")
-                column_info("Out_Over", "Enter the over in which the player got out. If the player remained not-out, you may leave it blank or specify 'not-out'. Preferred datatype: Numeric or String.")
-                column_info("Balls_Played", "Enter the total number of balls faced by the player while batting. Null values are allowed only when the player did not bat. Preferred datatype: Integer.")
-                column_info("Runs_Scored", "Enter the total runs scored by the player in that match. Null values are allowed only when the player did not bat. Preferred datatype: Integer.")
+                column_info("Batting_Position",   "Enter the batting order position (1–11). Null values are NOT allowed. Preferred datatype: Integer.")
+                column_info("Batting_Start_Over",  "Enter the over when the player started batting. Leave blank if the player did not bat. Preferred datatype: Numeric.")
+                column_info("Out_Over",            "Enter the over the player got out. Use 'not-out' or leave blank if the player remained not-out. Preferred datatype: Numeric or String.")
+                column_info("Balls_Played",        "Enter total balls faced. Leave blank if the player did not bat. Preferred datatype: Integer.")
+                column_info("Runs_Scored",         "Enter total runs scored. Leave blank if the player did not bat. Preferred datatype: Integer.")
 
             with st.expander("⚾ Bowling Info", expanded=False):
-                column_info("Overs_Bowled", "Enter the total overs bowled by the player (e.g., 2.4 overs). Null values are allowed when the player did not bowl in the match. Preferred datatype: Float.")
-                column_info("Runs_Given", "Enter the total runs conceded by the player while bowling. Null values are allowed only if the player did not bowl; otherwise missing values will be filled with 0 during cleaning. Preferred datatype: Integer.")
-                column_info("Wickets_Taken", "Enter the number of wickets taken by the bowler in the match. Null values are allowed only if the player did not bowl; otherwise missing values will be filled with 0 during cleaning. Preferred datatype: Integer.")
+                column_info("Overs_Bowled",  "Enter total overs bowled (e.g., 2.4). Leave blank if the player did not bowl. Preferred datatype: Float.")
+                column_info("Runs_Given",    "Enter total runs conceded. Leave blank only if the player did not bowl; missing values are auto-filled to 0 during cleaning. Preferred datatype: Integer.")
+                column_info("Wickets_Taken", "Enter number of wickets taken. Leave blank only if the player did not bowl; missing values are auto-filled to 0. Preferred datatype: Integer.")
 
             st.divider()
 
-            st.subheader("Example Datasets")
+            st.markdown("""
+            <p style="font-family:'Rajdhani',sans-serif; font-weight:700;
+                      font-size:20px; color:#e0c070; margin:4px 0 10px 0;">
+                Example Datasets
+            </p>
+            """, unsafe_allow_html=True)
 
             with open("RCB_IPL2024_FirstMatch.csv","rb") as f:
-                st.download_button("Download Example Dataset 1", f, "RCB_IPL2024_FirstMatch.csv")
+                st.download_button("⬇ Download Example Dataset 1", f, "RCB_IPL2024_FirstMatch.csv")
             with open("RCB_IPL2024_Match2_vs_PBKS.csv","rb") as f:
-                st.download_button("Download Example Dataset 2", f, "RCB_IPL2024_Match2_vs_PBKS.csv")
+                st.download_button("⬇ Download Example Dataset 2", f, "RCB_IPL2024_Match2_vs_PBKS.csv")
             with open("RCB_IPL2024_Match3_vs_GT.csv","rb") as f:
-                st.download_button("Download Example Dataset 3", f, "RCB_IPL2024_Match3_vs_GT.csv")
+                st.download_button("⬇ Download Example Dataset 3", f, "RCB_IPL2024_Match3_vs_GT.csv")
 
-            st.divider()
+            #st.divider()
+            st.markdown("<div style='height:50px;'></div>", unsafe_allow_html=True)
 
-        # ======================================================
-        # BATTING ANALYTICS TAB
-        # ======================================================
-
+        # ══════════════════════════════════════════════════
+        # TAB 2 — BATTING ANALYTICS
+        # ══════════════════════════════════════════════════
         with tab2:
 
             if st.session_state.df2 is None:
-                st.warning("Please upload and confirm dataset in Dataset tab first.")
-
+                st.warning("Please upload and confirm your dataset in the Dataset tab first.")
             else:
-
                 df2 = st.session_state.df2
 
-                st.markdown("### Individual Runs Scored by Players")
+                # ── Individual runs ──
+                section_heading("🏏", "Individual Runs Scored by Players")
 
                 done_batting = df2[df2["Balls_Played"] > 0]
 
@@ -397,48 +765,62 @@ with center:
                 )
                 runs_difference.index = runs_difference.index + 1
 
-                st.dataframe(runs_difference[["Player_Name", "Runs_Scored", "Balls_Played"]], use_container_width=True)
+                # FIX #1: dataframe above chart, use_container_width fills full width
+                st.dataframe(runs_difference[["Player_Name","Runs_Scored","Balls_Played"]], use_container_width=True)
 
-                colors = sns.color_palette("coolwarm", len(runs_difference))
-                fig, ax = plt.subplots(figsize=(10, 5), dpi=120)
+                n = len(runs_difference)
+                colors = sns.color_palette(BATTING_CMAP, n)
+                fig, ax = plt.subplots(figsize=(BAR_W, BAR_H), dpi=120)
                 sns.barplot(y=runs_difference["Player_Name"], x=runs_difference["Runs_Scored"], palette=colors, ax=ax)
-                ax.set_title("Individual Runs Scored by Players", fontsize=16, fontweight="bold")
-                ax.set_xlabel("Runs Scored", fontsize=12)
-                ax.set_ylabel("Players", fontsize=12)
+                ax.set_title("Individual Runs Scored by Players", fontsize=14, fontweight="bold")
+                ax.set_xlabel("Runs Scored", fontsize=11)
+                ax.set_ylabel("Players", fontsize=11)
                 ax.grid(axis='x', linestyle='--', alpha=0.4)
                 plt.tight_layout()
                 st.pyplot(fig)
+                plt.close(fig)
 
                 st.divider()
 
-                st.markdown("### Total Runs Contribution")
+                # ── Runs contribution pie ──
+                section_heading("📊", "Total Runs Contribution")
 
-                top_batters = runs_difference[["Player_Name", "Runs_Scored"]].head(5).reset_index(drop=True)
-                other_runs = runs_difference["Runs_Scored"].sum().astype(int) - top_batters["Runs_Scored"].sum().astype(int)
+                top_batters  = runs_difference[["Player_Name","Runs_Scored"]].head(5).reset_index(drop=True)
+                other_runs   = runs_difference["Runs_Scored"].sum().astype(int) - top_batters["Runs_Scored"].sum().astype(int)
                 batting_data = top_batters.copy()
                 batting_data.loc[len(batting_data)] = ["Others", int(other_runs)]
                 batting_data = batting_data[batting_data["Runs_Scored"] > 0]
-                
+
                 st.dataframe(batting_data, use_container_width=True)
-                
-                fig, ax = plt.subplots(figsize=(8, 6), dpi=120)
+
+                pie_colors = sns.color_palette("YlOrRd", len(batting_data))
+                fig, ax = plt.subplots(figsize=(PIE_W, PIE_H), dpi=120)
                 wedges, texts, autotexts = ax.pie(
                     batting_data["Runs_Scored"], labels=None, autopct="%1.1f%%",
-                    startangle=90, wedgeprops={"edgecolor": "black"}
+                    startangle=90, wedgeprops={"edgecolor": "black"},
+                    colors=pie_colors
                 )
-                legend_labels = [f"{p} - {r}" for p, r in zip(batting_data["Player_Name"], batting_data["Runs_Scored"])]
-                ax.legend(wedges, legend_labels, title="Players", loc="center left", bbox_to_anchor=(1, 0.5))
-                ax.set_title("Total Runs Contribution", fontsize=16, fontweight="bold")
+                for at in autotexts:
+                    at.set_fontsize(9)
+                    at.set_fontweight("bold")
+                    at.set_color("black")
+                legend_labels = [f"{p}  —  {r}" for p, r in zip(batting_data["Player_Name"], batting_data["Runs_Scored"])]
+                ax.legend(wedges, legend_labels, title="Players", title_fontsize=9,
+                          loc="center left", bbox_to_anchor=(1, 0.5), fontsize=9,
+                          framealpha=1.0, edgecolor="#000000", facecolor="#ffffff",
+                          labelcolor="#000000")
+                ax.set_title("Total Runs Contribution", fontsize=14, fontweight="bold")
                 plt.tight_layout()
                 st.pyplot(fig)
+                plt.close(fig)
 
                 st.divider()
 
-                st.markdown("### Player's Total Runs in Each Match")
+                # ── Runs per match ──
+                section_heading("📈", "Player's Total Runs in Each Match")
 
                 if done_batting["Match_No"].nunique() > 1:
-
-                    players_list = sorted(done_batting["Player_Name"].unique())
+                    players_list    = sorted(done_batting["Player_Name"].unique())
                     selected_player = st.selectbox("Select Player", players_list)
                     selected_player_df = done_batting[done_batting["Player_Name"] == selected_player]
 
@@ -454,23 +836,24 @@ with center:
                     x_vals = player_runs["Match_No"].astype(int)
                     y_vals = player_runs["Runs_Scored"]
 
-                    fig, ax = plt.subplots(figsize=(8, 5), dpi=120)
-                    sns.lineplot(x=x_vals, y=y_vals, marker="o", color="darkblue", ax=ax)
+                    fig, ax = plt.subplots(figsize=(LINE_W, LINE_H), dpi=120)
+                    sns.lineplot(x=x_vals, y=y_vals, marker="o", color="#c9a84c", ax=ax)
                     ax.set_xticks(x_vals.tolist())
                     ax.set_yticks(y_vals.tolist())
-                    ax.set_title(f"{selected_player}'s Total Runs in Each Match", fontsize=16, fontweight="bold")
-                    ax.set_xlabel("Match No", fontsize=12)
-                    ax.set_ylabel("Runs Scored in each match", fontsize=12)
+                    ax.set_title(f"{selected_player}'s Total Runs in Each Match", fontsize=14, fontweight="bold")
+                    ax.set_xlabel("Match No", fontsize=11)
+                    ax.set_ylabel("Runs Scored", fontsize=11)
                     ax.grid(linestyle='--', alpha=0.4)
                     plt.tight_layout()
                     st.pyplot(fig)
-
+                    plt.close(fig)
                 else:
-                    st.warning("Player's Total Runs in Each Match is not applicable for single match dataset.")
+                    st.warning("Player's Total Runs in Each Match is not applicable for a single-match dataset.")
 
                 st.divider()
 
-                st.markdown("### Runs Scored Contribution Based on Roles")
+                # ── Runs by role ──
+                section_heading("🎭", "Runs Scored Contribution Based on Roles")
 
                 runs_contribution_by_role = done_batting[done_batting["Runs_Scored"] > 0]
                 runs_contribution_by_role = (
@@ -482,22 +865,32 @@ with center:
 
                 st.dataframe(runs_contribution_by_role, use_container_width=True)
 
-                fig, ax = plt.subplots(figsize=(8, 6), dpi=120)
+                role_pie_colors = ROLE_BAT_COLORS[:len(runs_contribution_by_role)]
+                fig, ax = plt.subplots(figsize=(PIE_W, PIE_H), dpi=120)
                 wedges, texts, autotexts = ax.pie(
                     runs_contribution_by_role["Runs_Scored"], labels=None, autopct="%1.1f%%",
-                    startangle=90, wedgeprops={"edgecolor": "black"}
+                    startangle=90, wedgeprops={"edgecolor": "black"},
+                    colors=role_pie_colors
                 )
-                legend_labels = [f"{r} - {s}" for r, s in zip(runs_contribution_by_role["Role"], runs_contribution_by_role["Runs_Scored"])]
-                ax.legend(wedges, legend_labels, title="Roles", loc="center left", bbox_to_anchor=(1, 0.5))
-                ax.set_title("Runs Scored Contribution Based on Roles", fontsize=16, fontweight="bold")
+                for at in autotexts:
+                    at.set_fontsize(9)
+                    at.set_fontweight("bold")
+                    at.set_color("black")
+                legend_labels = [f"{r}  —  {s}" for r, s in zip(runs_contribution_by_role["Role"], runs_contribution_by_role["Runs_Scored"])]
+                ax.legend(wedges, legend_labels, title="Roles", title_fontsize=9,
+                          loc="center left", bbox_to_anchor=(1, 0.5), fontsize=9,
+                          framealpha=1.0, edgecolor="#000000", facecolor="#ffffff",
+                          labelcolor="#000000")
+                ax.set_title("Runs Scored Contribution Based on Roles", fontsize=14, fontweight="bold")
                 plt.tight_layout()
                 st.pyplot(fig)
+                plt.close(fig)
 
                 st.divider()
 
-                st.markdown("### Strike-Rate Comparison between Batsmen and All-Rounders")
+                # ── Strike rate comparison ──
+                section_heading("⚡", "Strike-Rate Comparison — Batsmen vs All-Rounders")
 
-                # ── FIX 2: Role is now lowercase so "batsman" and "all-rounder" match correctly
                 batters_allrounders = done_batting[
                     (done_batting["Role"] == "batsman") | (done_batting["Role"] == "all-rounder")
                 ]
@@ -510,35 +903,46 @@ with center:
                         .agg({"Role": "first", "Strike_Rate": "mean", "Runs_Scored": "sum", "Balls_Played": "sum"})
                         .sort_values(by="Strike_Rate", ascending=False)
                     ).round(2).reset_index()
-                    strike_rate_diff["Runs_Scored"] = strike_rate_diff["Runs_Scored"].astype(int)
+                    strike_rate_diff["Runs_Scored"]  = strike_rate_diff["Runs_Scored"].astype(int)
                     strike_rate_diff["Balls_Played"] = strike_rate_diff["Balls_Played"].astype(int)
                     strike_rate_diff.index = strike_rate_diff.index + 1
 
-                    st.dataframe(strike_rate_diff[["Player_Name", "Role", "Strike_Rate"]], use_container_width=True)
+                    st.dataframe(strike_rate_diff[["Player_Name","Role","Strike_Rate"]], use_container_width=True)
 
-                    colors = {"batsman": "#4C72B0", "all-rounder": "#DD8452"}
-                    fig, ax = plt.subplots(figsize=(10, 5), dpi=120)
+                    fig, ax = plt.subplots(figsize=(BAR_W, BAR_H), dpi=120)
                     sns.barplot(x=strike_rate_diff["Strike_Rate"], y=strike_rate_diff["Player_Name"],
-                                hue=strike_rate_diff["Role"], palette=colors, ax=ax)
-                    ax.set_title("Strike-Rate Comparison between Batsmen and All-Rounders", fontsize=16, fontweight="bold")
-                    ax.set_xlabel("Strike Rate", fontsize=12)
-                    ax.set_ylabel("Players", fontsize=12)
+                                hue=strike_rate_diff["Role"], palette=SR_ROLE_COLORS, ax=ax)
+                    legend = ax.get_legend()
+                    if legend:
+                        legend.set_title("Role")
+                        legend.get_frame().set_facecolor("#ffffff")
+                        legend.get_frame().set_edgecolor("#000000")
+                        legend.get_frame().set_alpha(1.0)
+                        for t in legend.get_texts():
+                            t.set_fontsize(9)
+                            t.set_fontweight("bold")
+                            t.set_color("#000000")
+                        legend.get_title().set_color("#000000")
+                    ax.set_title("Strike-Rate Comparison — Batsmen vs All-Rounders", fontsize=14, fontweight="bold")
+                    ax.set_xlabel("Strike Rate", fontsize=11)
+                    ax.set_ylabel("Players", fontsize=11)
                     ax.grid(axis='x', linestyle='--', alpha=0.4)
                     plt.tight_layout()
                     st.pyplot(fig)
+                    plt.close(fig)
 
                 st.divider()
 
-                st.markdown("### Players Consistency in Batting")
+                # ── Batting consistency ──
+                section_heading("📉", "Players Consistency in Batting")
 
                 match_balls_played = df2[df2["Balls_Played"] > 0]
-                match_runs = match_balls_played.groupby(["Match_No", "Player_Name"])["Runs_Scored"].sum().reset_index()
+                match_runs = match_balls_played.groupby(["Match_No","Player_Name"])["Runs_Scored"].sum().reset_index()
 
                 if match_balls_played["Match_No"].nunique() > 1:
-
                     batting_consistency = (
                         match_runs.groupby("Player_Name")["Runs_Scored"]
-                        .agg(["mean", "std", "count"]).round(2).reset_index()
+                        .agg(["mean","std","count"]).round(2).reset_index()
                     )
                     batting_consistency = batting_consistency[batting_consistency["count"] > 1]
                     batting_consistency["Consistency_Score"] = (
@@ -548,28 +952,30 @@ with center:
                         by="Consistency_Score", ascending=False).reset_index(drop=True)
                     batting_consistency.index += 1
 
-                    st.dataframe(batting_consistency[["Player_Name", "Consistency_Score"]], use_container_width=True)
+                    st.dataframe(batting_consistency[["Player_Name","Consistency_Score"]], use_container_width=True)
 
-                    colors = sns.color_palette("coolwarm", len(batting_consistency))
-                    fig, ax = plt.subplots(figsize=(10, 5), dpi=120)
+                    n = len(batting_consistency)
+                    colors = sns.color_palette(BATTING_CMAP, n)
+                    fig, ax = plt.subplots(figsize=(BAR_W, BAR_H), dpi=120)
                     sns.barplot(y=batting_consistency["Player_Name"], x=batting_consistency["Consistency_Score"],
                                 palette=colors, ax=ax)
-                    ax.set_title("Players Consistency in Batting", fontsize=16, fontweight="bold")
-                    ax.set_ylabel("Players", fontsize=12)
-                    ax.set_xlabel("Consistency Score", fontsize=12)
+                    ax.set_title("Players Consistency in Batting", fontsize=14, fontweight="bold")
+                    ax.set_ylabel("Players", fontsize=11)
+                    ax.set_xlabel("Consistency Score", fontsize=11)
                     ax.grid(axis='x', linestyle='--', alpha=0.4)
                     plt.tight_layout()
                     st.pyplot(fig)
-
+                    plt.close(fig)
                 else:
-                    st.warning("Players Consistency in Batting is not applicable for single match dataset")
+                    st.warning("Players Consistency in Batting is not applicable for a single-match dataset.")
 
                 st.divider()
 
-                st.markdown("### Average Runs by Batting Order")
+                # ── Runs by batting order ──
+                section_heading("🔢", "Average Runs by Batting Order")
 
                 df2["Batting_Order"] = pd.cut(
-                    df2["Batting_Position"], bins=[0, 3, 7, 11], labels=["top", "middle", "lower"]
+                    df2["Batting_Position"], bins=[0,3,7,11], labels=["top","middle","lower"]
                 ).astype(str)
                 order_runs = (
                     df2.groupby("Batting_Order", as_index=False)["Runs_Scored"]
@@ -581,65 +987,76 @@ with center:
 
                 st.dataframe(order_runs, use_container_width=True)
 
-                fig, ax = plt.subplots(figsize=(8, 5), dpi=120)
-                sns.barplot(x=order_runs["Batting_Order"], y=order_runs["Average_Runs_Scored"], palette="viridis", ax=ax)
-                ax.set_title("Average Runs by Batting Order", fontsize=16, fontweight="bold")
-                ax.set_xlabel("Batting Order", fontsize=12)
-                ax.set_ylabel("Average Runs Scored", fontsize=12)
+                fig, ax = plt.subplots(figsize=(LINE_W, BAR_H), dpi=120)
+                sns.barplot(x=order_runs["Batting_Order"], y=order_runs["Average_Runs_Scored"],
+                            palette=ORDER_PAL, ax=ax)
+                ax.set_title("Average Runs by Batting Order", fontsize=14, fontweight="bold")
+                ax.set_xlabel("Batting Order", fontsize=11)
+                ax.set_ylabel("Average Runs Scored", fontsize=11)
                 ax.grid(axis='y', linestyle='--', alpha=0.4)
                 plt.tight_layout()
                 st.pyplot(fig)
+                plt.close(fig)
 
                 st.divider()
 
-                st.markdown("### Phase wise Wickets Lost Breakdown")
+                # ── Phase-wise wickets lost ──
+                section_heading("🔻", "Phase-wise Wickets Lost Breakdown")
 
                 wickets_df = df2[df2["Was_Out"] == True].copy()
                 wickets_df["Out_Over"] = pd.to_numeric(wickets_df["Out_Over"], errors="coerce")
 
                 def assign_phase(over):
-                    if over <= 6:
-                        return "Powerplay"
-                    elif over <= 15:
-                        return "Middle Overs"
-                    else:
-                        return "Death Overs"
+                    if over <= 6:    return "Powerplay"
+                    elif over <= 15: return "Middle Overs"
+                    else:            return "Death Overs"
 
                 wickets_df["Wicket_Phase"] = wickets_df["Out_Over"].apply(assign_phase)
                 phase_wickets = (
                     wickets_df.groupby("Wicket_Phase")["Player_Name"]
-                    .size().reindex(["Powerplay", "Middle Overs", "Death Overs"])
+                    .size().reindex(["Powerplay","Middle Overs","Death Overs"])
                     .reset_index(name="Wickets_Lost").sort_values(by="Wickets_Lost", ascending=False)
                 )
                 phase_wickets.index += 1
 
                 st.dataframe(phase_wickets, use_container_width=True)
 
-                fig, ax = plt.subplots(figsize=(8, 5), dpi=120)
-                sns.barplot(x=phase_wickets["Wicket_Phase"], y=phase_wickets["Wickets_Lost"], palette="viridis", ax=ax)
-                ax.set_title("Phase-wise Wickets Lost", fontsize=16, fontweight="bold")
-                ax.set_xlabel("Match Phases", fontsize=12)
-                ax.set_ylabel("Wickets Lost", fontsize=12)
+                fig, ax = plt.subplots(figsize=(LINE_W, BAR_H), dpi=120)
+                # Phase-specific colors: red=danger(powerplay), amber=mid, green=death
+                phase_order = phase_wickets["Wicket_Phase"].tolist()
+                phase_color_map = {"Powerplay": "#e05252", "Middle Overs": "#e0c070", "Death Overs": "#3fb950"}
+                phase_pal = [phase_color_map.get(p, "#8b949e") for p in phase_order]
+                sns.barplot(x=phase_wickets["Wicket_Phase"], y=phase_wickets["Wickets_Lost"],
+                            palette=phase_pal, ax=ax)
+                ax.set_title("Phase-wise Wickets Lost", fontsize=14, fontweight="bold")
+                ax.set_xlabel("Match Phases", fontsize=11)
+                ax.set_ylabel("Wickets Lost", fontsize=11)
                 ax.grid(axis='y', linestyle='--', alpha=0.4)
+                # Add a simple legend
+                patches = [mpatches.Patch(color=v, label=k) for k, v in phase_color_map.items()]
+                ax.legend(handles=patches, title="Phase", fontsize=9,
+                          framealpha=1.0, edgecolor="#000000", facecolor="#ffffff",
+                          labelcolor="#000000")
+                ax.get_legend().get_title().set_color("#000000")
                 plt.tight_layout()
                 st.pyplot(fig)
+                plt.close(fig)
 
-                st.divider()
+                #st.divider()
+                st.markdown("<div style='height:50px;'></div>", unsafe_allow_html=True)
 
-        # ======================================================
-        # BOWLING ANALYTICS TAB
-        # ======================================================
-
+        # ══════════════════════════════════════════════════
+        # TAB 3 — BOWLING ANALYTICS
+        # ══════════════════════════════════════════════════
         with tab3:
 
             if st.session_state.get("df2") is None:
-                st.warning("Please upload and confirm dataset in Dataset tab first.")
-
+                st.warning("Please upload and confirm your dataset in the Dataset tab first.")
             else:
-
                 df2 = st.session_state.df2
 
-                st.markdown("### Individual Wickets Taken by Players")
+                # ── Individual wickets ──
+                section_heading("⚾", "Individual Wickets Taken by Players")
 
                 done_bowling = df2[df2["Overs_Bowled"] > 0]
 
@@ -653,21 +1070,25 @@ with center:
 
                 st.dataframe(bowling_diff, use_container_width=True)
 
-                colors = sns.color_palette("coolwarm", len(bowling_diff))
-                fig, ax = plt.subplots(figsize=(10, 5), dpi=120)
-                sns.barplot(x=bowling_diff["Wickets_Taken"], y=bowling_diff["Player_Name"], palette=colors, ax=ax)
-                ax.set_title("Individual Wickets Taken by Players", fontsize=16, fontweight="bold")
-                ax.set_ylabel("Players", fontsize=12)
-                ax.set_xlabel("Wickets Taken", fontsize=12)
+                n = len(bowling_diff)
+                colors = sns.color_palette(BOWLING_CMAP, n)
+                fig, ax = plt.subplots(figsize=(BAR_W, BAR_H), dpi=120)
+                sns.barplot(x=bowling_diff["Wickets_Taken"], y=bowling_diff["Player_Name"],
+                            palette=colors, ax=ax)
+                ax.set_title("Individual Wickets Taken by Players", fontsize=14, fontweight="bold")
+                ax.set_ylabel("Players", fontsize=11)
+                ax.set_xlabel("Wickets Taken", fontsize=11)
                 ax.grid(axis='x', linestyle='--', alpha=0.4)
                 plt.tight_layout()
                 st.pyplot(fig)
+                plt.close(fig)
 
                 st.divider()
 
-                st.markdown("### Total Wickets Contribution")
+                # ── Wickets contribution pie ──
+                section_heading("📊", "Total Wickets Contribution")
 
-                top_bowling = bowling_diff[["Player_Name", "Wickets_Taken"]].head()
+                top_bowling   = bowling_diff[["Player_Name","Wickets_Taken"]].head()
                 other_bowlers = (
                     bowling_diff["Wickets_Taken"].sum().astype(int) - top_bowling["Wickets_Taken"].sum().astype(int)
                 )
@@ -678,25 +1099,36 @@ with center:
 
                 st.dataframe(bowling_data, use_container_width=True)
 
-                fig, ax = plt.subplots(figsize=(8, 6), dpi=120)
+                bowl_pie_colors = sns.color_palette("YlGnBu", len(bowling_data))
+                fig, ax = plt.subplots(figsize=(PIE_W, PIE_H), dpi=120)
                 wedges, texts, autotexts = ax.pie(
                     bowling_data["Wickets_Taken"], labels=None, autopct="%1.1f%%",
-                    startangle=90, wedgeprops={"edgecolor": "black"}
+                    startangle=90, wedgeprops={"edgecolor": "black"},
+                    colors=bowl_pie_colors
                 )
-                legend_labels = [f"{p} - {w}" for p, w in zip(bowling_data["Player_Name"], bowling_data["Wickets_Taken"])]
-                ax.legend(wedges, legend_labels, title="Players", loc="center left", bbox_to_anchor=(1, 0.5))
-                ax.set_title("Total Wickets Contribution", fontsize=16, fontweight="bold")
+                for at in autotexts:
+                    at.set_fontsize(9)
+                    at.set_fontweight("bold")
+                    at.set_color("black")
+                legend_labels = [f"{p}  —  {w}" for p, w in zip(bowling_data["Player_Name"], bowling_data["Wickets_Taken"])]
+                ax.legend(wedges, legend_labels, title="Players", title_fontsize=9,
+                          loc="center left", bbox_to_anchor=(1, 0.5), fontsize=9,
+                          framealpha=1.0, edgecolor="#000000", facecolor="#ffffff",
+                          labelcolor="#000000")
+                ax.get_legend().get_title().set_color("#000000")
+                ax.set_title("Total Wickets Contribution", fontsize=14, fontweight="bold")
                 plt.tight_layout()
                 st.pyplot(fig)
+                plt.close(fig)
 
                 st.divider()
 
-                st.markdown("### Player's Total Wickets in Each Match")
+                # ── Wickets per match ──
+                section_heading("📈", "Player's Total Wickets in Each Match")
 
                 if done_bowling["Match_No"].nunique() > 1:
-
-                    players_list_bowl = sorted(done_bowling["Player_Name"].unique())
-                    selected_player_bowl = st.selectbox("Select Player", players_list_bowl)
+                    players_list_bowl       = sorted(done_bowling["Player_Name"].unique())
+                    selected_player_bowl    = st.selectbox("Select Player", players_list_bowl)
                     selected_player_bowl_df = done_bowling[done_bowling["Player_Name"] == selected_player_bowl]
 
                     player_wickets = (
@@ -711,23 +1143,24 @@ with center:
                     x_vals = player_wickets["Match_No"].astype(int)
                     y_vals = player_wickets["Wickets_Taken"].astype(int)
 
-                    fig, ax = plt.subplots(figsize=(8, 5), dpi=120)
-                    sns.lineplot(x=x_vals, y=y_vals, marker="o", color="darkblue", ax=ax)
+                    fig, ax = plt.subplots(figsize=(LINE_W, LINE_H), dpi=120)
+                    sns.lineplot(x=x_vals, y=y_vals, marker="o", color="#2dd4bf", ax=ax)
                     ax.set_xticks(x_vals.tolist())
                     ax.set_yticks(y_vals.tolist())
-                    ax.set_title(f"{selected_player_bowl}'s Total Wickets in Each Match", fontsize=16, fontweight="bold")
-                    ax.set_xlabel("Match No", fontsize=12)
-                    ax.set_ylabel("Wickets Taken in each match", fontsize=12)
+                    ax.set_title(f"{selected_player_bowl}'s Total Wickets in Each Match", fontsize=14, fontweight="bold")
+                    ax.set_xlabel("Match No", fontsize=11)
+                    ax.set_ylabel("Wickets Taken", fontsize=11)
                     ax.grid(linestyle='--', alpha=0.4)
                     plt.tight_layout()
                     st.pyplot(fig)
-
+                    plt.close(fig)
                 else:
-                    st.warning("Player's Total Wickets in Each Match is not applicable for single match dataset.")
+                    st.warning("Player's Total Wickets in Each Match is not applicable for a single-match dataset.")
 
                 st.divider()
 
-                st.markdown("### Wickets Taken Contribution Based on Roles")
+                # ── Wickets by role ──
+                section_heading("🎭", "Wickets Taken Contribution Based on Roles")
 
                 wickets_contribution_by_role = done_bowling[done_bowling["Wickets_Taken"] > 0]
                 wickets_contribution_by_role = (
@@ -739,22 +1172,33 @@ with center:
 
                 st.dataframe(wickets_contribution_by_role, use_container_width=True)
 
-                fig, ax = plt.subplots(figsize=(8, 6), dpi=120)
+                role_bowl_colors = ROLE_BOWL_COLORS[:len(wickets_contribution_by_role)]
+                fig, ax = plt.subplots(figsize=(PIE_W, PIE_H), dpi=120)
                 wedges, texts, autotexts = ax.pie(
                     wickets_contribution_by_role["Wickets_Taken"], labels=None, autopct="%1.1f%%",
-                    startangle=90, wedgeprops={"edgecolor": "black"}
+                    startangle=90, wedgeprops={"edgecolor": "black"},
+                    colors=role_bowl_colors
                 )
-                legend_labels = [f"{r} - {w}" for r, w in zip(wickets_contribution_by_role["Role"], wickets_contribution_by_role["Wickets_Taken"])]
-                ax.legend(wedges, legend_labels, title="Roles", loc="center left", bbox_to_anchor=(1, 0.5))
-                ax.set_title("Wickets Taken Contribution Based on Roles", fontsize=16, fontweight="bold")
+                for at in autotexts:
+                    at.set_fontsize(9)
+                    at.set_fontweight("bold")
+                    at.set_color("black")
+                legend_labels = [f"{r}  —  {w}" for r, w in zip(wickets_contribution_by_role["Role"], wickets_contribution_by_role["Wickets_Taken"])]
+                ax.legend(wedges, legend_labels, title="Roles", title_fontsize=9,
+                          loc="center left", bbox_to_anchor=(1, 0.5), fontsize=9,
+                          framealpha=1.0, edgecolor="#000000", facecolor="#ffffff",
+                          labelcolor="#000000")
+                ax.get_legend().get_title().set_color("#000000")
+                ax.set_title("Wickets Taken Contribution Based on Roles", fontsize=14, fontweight="bold")
                 plt.tight_layout()
                 st.pyplot(fig)
+                plt.close(fig)
 
                 st.divider()
 
-                st.markdown("### Economy-Rate Comparison between Bowlers and All-Rounders")
+                # ── Economy rate comparison ──
+                section_heading("💰", "Economy-Rate Comparison — Bowlers vs All-Rounders")
 
-                # ── FIX 3: Role is now lowercase so "bowler" and "all-rounder" match correctly
                 bowlers_allrounders = done_bowling[
                     (done_bowling["Role"] == "bowler") | (done_bowling["Role"] == "all-rounder")
                 ]
@@ -769,31 +1213,42 @@ with center:
                     ).round(2).reset_index(drop=True)
                     economy_diff.index += 1
 
-                    st.dataframe(economy_diff[["Player_Name", "Role", "Economy_Rate"]], use_container_width=True)
+                    st.dataframe(economy_diff[["Player_Name","Role","Economy_Rate"]], use_container_width=True)
 
-                    colors = {"bowler": "#4C72B0", "all-rounder": "#DD8452"}
-                    fig, ax = plt.subplots(figsize=(10, 5), dpi=120)
+                    fig, ax = plt.subplots(figsize=(BAR_W, BAR_H), dpi=120)
                     sns.barplot(x=economy_diff["Economy_Rate"], y=economy_diff["Player_Name"],
-                                hue=economy_diff["Role"], palette=colors, ax=ax)
-                    ax.set_title("Economy-Rate Comparison between Bowlers and All-Rounders", fontsize=16, fontweight="bold")
-                    ax.set_xlabel("Economy Rate", fontsize=12)
-                    ax.set_ylabel("Players", fontsize=12)
+                                hue=economy_diff["Role"], palette=ECO_ROLE_COLORS, ax=ax)
+                    legend = ax.get_legend()
+                    if legend:
+                        legend.set_title("Role")
+                        legend.get_frame().set_facecolor("#ffffff")
+                        legend.get_frame().set_edgecolor("#000000")
+                        legend.get_frame().set_alpha(1.0)
+                        for t in legend.get_texts():
+                            t.set_fontsize(9)
+                            t.set_fontweight("bold")
+                            t.set_color("#000000")
+                        legend.get_title().set_color("#000000")
+                    ax.set_title("Economy-Rate Comparison — Bowlers vs All-Rounders", fontsize=14, fontweight="bold")
+                    ax.set_xlabel("Economy Rate", fontsize=11)
+                    ax.set_ylabel("Players", fontsize=11)
                     ax.grid(axis='x', linestyle='--', alpha=0.4)
                     plt.tight_layout()
                     st.pyplot(fig)
+                    plt.close(fig)
 
                 st.divider()
 
-                st.markdown("### Players Consistency in Bowling")
+                # ── Bowling consistency ──
+                section_heading("📉", "Players Consistency in Bowling")
 
-                match_overs = df2[df2["Overs_Bowled"] > 0]
-                match_wickets = match_overs.groupby(["Match_No", "Player_Name"])["Wickets_Taken"].sum().reset_index()
+                match_overs   = df2[df2["Overs_Bowled"] > 0]
+                match_wickets = match_overs.groupby(["Match_No","Player_Name"])["Wickets_Taken"].sum().reset_index()
 
                 if match_overs["Match_No"].nunique() > 1:
-
                     bowling_consistency = (
                         match_wickets.groupby("Player_Name")["Wickets_Taken"]
-                        .agg(["mean", "std", "count"]).round(2).reset_index()
+                        .agg(["mean","std","count"]).round(2).reset_index()
                     )
                     bowling_consistency = bowling_consistency[bowling_consistency["count"] > 1]
                     bowling_consistency["Consistency_Score"] = (
@@ -803,39 +1258,38 @@ with center:
                         by="Consistency_Score", ascending=False).reset_index(drop=True)
                     bowling_consistency.index += 1
 
-                    st.dataframe(bowling_consistency[["Player_Name", "Consistency_Score"]], use_container_width=True)
+                    st.dataframe(bowling_consistency[["Player_Name","Consistency_Score"]], use_container_width=True)
 
-                    colors = sns.color_palette("coolwarm", len(bowling_consistency))
-                    fig, ax = plt.subplots(figsize=(10, 5), dpi=120)
+                    n = len(bowling_consistency)
+                    colors = sns.color_palette(BOWLING_CMAP, n)
+                    fig, ax = plt.subplots(figsize=(BAR_W, BAR_H), dpi=120)
                     sns.barplot(y=bowling_consistency["Player_Name"], x=bowling_consistency["Consistency_Score"],
                                 palette=colors, ax=ax)
-                    ax.set_title("Players Consistency in Bowling", fontsize=16, fontweight="bold")
-                    ax.set_xlabel("Consistency Score", fontsize=12)
-                    ax.set_ylabel("Players", fontsize=12)
+                    ax.set_title("Players Consistency in Bowling", fontsize=14, fontweight="bold")
+                    ax.set_xlabel("Consistency Score", fontsize=11)
+                    ax.set_ylabel("Players", fontsize=11)
                     ax.grid(axis='x', linestyle='--', alpha=0.4)
                     plt.tight_layout()
                     st.pyplot(fig)
-
+                    plt.close(fig)
                 else:
-                    st.warning("Players Consistency in Bowling is not applicable for single match dataset")
+                    st.warning("Players Consistency in Bowling is not applicable for a single-match dataset.")
 
-                st.divider()
+                #st.divider()
+                st.markdown("<div style='height:50px;'></div>", unsafe_allow_html=True)
 
-        # ======================================================
-        # SUMMARY TAB
-        # ======================================================
-
+        # ══════════════════════════════════════════════════
+        # TAB 4 — SUMMARY
+        # ══════════════════════════════════════════════════
         with tab4:
 
             if st.session_state.get("df2") is None:
-                st.warning("Please upload and confirm dataset in Dataset tab first.")
-
+                st.warning("Please upload and confirm your dataset in the Dataset tab first.")
             else:
-
                 df2 = st.session_state.df2
 
-                done_batting_s = df2[df2["Balls_Played"] > 0]
-                done_bowling_s = df2[df2["Overs_Bowled"] > 0]
+                done_batting_s  = df2[df2["Balls_Played"] > 0]
+                done_bowling_s  = df2[df2["Overs_Bowled"] > 0]
 
                 runs_difference_s = (
                     done_batting_s.groupby("Player_Name")
@@ -850,7 +1304,6 @@ with center:
                 )
                 bowling_diff_s["Wickets_Taken"] = bowling_diff_s["Wickets_Taken"].astype(int)
 
-                # ── FIX 4: Role is lowercase after cleaning — filters now work correctly
                 batters_allrounders_s = done_batting_s[
                     (done_batting_s["Role"] == "batsman") | (done_batting_s["Role"] == "all-rounder")
                 ]
@@ -880,17 +1333,14 @@ with center:
                 wickets_df_s["Out_Over"] = pd.to_numeric(wickets_df_s["Out_Over"], errors="coerce")
 
                 def assign_phase_s(over):
-                    if over <= 6:
-                        return "Powerplay"
-                    elif over <= 15:
-                        return "Middle Overs"
-                    else:
-                        return "Death Overs"
+                    if over <= 6:    return "Powerplay"
+                    elif over <= 15: return "Middle Overs"
+                    else:            return "Death Overs"
 
                 wickets_df_s["Wicket_Phase"] = wickets_df_s["Out_Over"].apply(assign_phase_s)
                 phase_wickets_s = (
                     wickets_df_s.groupby("Wicket_Phase")["Player_Name"]
-                    .size().reindex(["Powerplay", "Middle Overs", "Death Overs"])
+                    .size().reindex(["Powerplay","Middle Overs","Death Overs"])
                     .reset_index(name="Wickets_Lost").sort_values(by="Wickets_Lost", ascending=False)
                 )
 
@@ -902,14 +1352,44 @@ with center:
                 wickets_contribution_by_role_s["Wickets_Taken"] = wickets_contribution_by_role_s["Wickets_Taken"].astype(int)
 
                 df2["Batting_Order"] = pd.cut(
-                    df2["Batting_Position"], bins=[0, 3, 7, 11], labels=["top", "middle", "lower"]
+                    df2["Batting_Position"], bins=[0,3,7,11], labels=["top","middle","lower"]
                 ).astype(str)
                 order_runs_s = (
                     df2.groupby("Batting_Order", as_index=False)["Runs_Scored"]
                     .sum().sort_values(by="Runs_Scored", ascending=False).reset_index(drop=True)
                 )
 
-                st.markdown("### Total Runs Scored and Total Wickets Taken in each Match")
+                top_scorer      = runs_difference_s.iloc[0]["Player_Name"]  if not runs_difference_s.empty  else "N/A"
+                top_scorer_runs = runs_difference_s.iloc[0]["Runs_Scored"]  if not runs_difference_s.empty  else 0
+                top_scorer_balls= runs_difference_s.iloc[0]["Balls_Played"] if not runs_difference_s.empty  else 0
+
+                top_wicket_taker  = bowling_diff_s.iloc[0]["Player_Name"]    if not bowling_diff_s.empty    else "N/A"
+                top_wicket_taker_w= bowling_diff_s.iloc[0]["Wickets_Taken"]  if not bowling_diff_s.empty    else 0
+
+                top_sr_player = strike_rate_diff_s.iloc[0]["Player_Name"]  if not strike_rate_diff_s.empty else "N/A"
+                top_sr_value  = strike_rate_diff_s.iloc[0]["Strike_Rate"]  if not strike_rate_diff_s.empty else 0
+
+                top_eco_player = economy_diff_s.iloc[0]["Player_Name"]    if not economy_diff_s.empty    else "N/A"
+                top_eco_value  = economy_diff_s.iloc[0]["Economy_Rate"]   if not economy_diff_s.empty    else 0
+
+                runs_role_1     = runs_contribution_by_role_s.iloc[0]["Role"]        if len(runs_contribution_by_role_s) > 0 else "N/A"
+                runs_role_1_val = runs_contribution_by_role_s.iloc[0]["Runs_Scored"] if len(runs_contribution_by_role_s) > 0 else 0
+                runs_role_2     = runs_contribution_by_role_s.iloc[1]["Role"]        if len(runs_contribution_by_role_s) > 1 else "N/A"
+                runs_role_2_val = runs_contribution_by_role_s.iloc[1]["Runs_Scored"] if len(runs_contribution_by_role_s) > 1 else 0
+
+                wkt_role_1     = wickets_contribution_by_role_s.iloc[0]["Role"]          if len(wickets_contribution_by_role_s) > 0 else "N/A"
+                wkt_role_1_val = wickets_contribution_by_role_s.iloc[0]["Wickets_Taken"] if len(wickets_contribution_by_role_s) > 0 else 0
+                wkt_role_2     = wickets_contribution_by_role_s.iloc[1]["Role"]          if len(wickets_contribution_by_role_s) > 1 else "N/A"
+                wkt_role_2_val = wickets_contribution_by_role_s.iloc[1]["Wickets_Taken"] if len(wickets_contribution_by_role_s) > 1 else 0
+
+                top_order    = order_runs_s.iloc[0]["Batting_Order"] if len(order_runs_s) > 0 else "N/A"
+                second_order = order_runs_s.iloc[1]["Batting_Order"] if len(order_runs_s) > 1 else "N/A"
+
+                top_phase      = phase_wickets_s.iloc[0]["Wicket_Phase"]  if not phase_wickets_s.empty else "N/A"
+                top_phase_wkts = phase_wickets_s.iloc[0]["Wickets_Lost"]  if not phase_wickets_s.empty else 0
+
+                # ── Runs & Wickets per match chart ──
+                section_heading("📊", "Total Runs Scored and Wickets Taken in Each Match")
 
                 runs_wickets = (
                     df2.groupby("Match_No", as_index=False)
@@ -917,242 +1397,344 @@ with center:
                 )
                 runs_wickets.index += 1
 
-                st.dataframe(runs_wickets[["Match_No", "Runs_Scored", "Wickets_Taken"]], use_container_width=True)
+                st.dataframe(runs_wickets[["Match_No","Runs_Scored","Wickets_Taken"]], use_container_width=True)
 
-                fig, ax = plt.subplots(1, 2, figsize=(10, 4), dpi=120)
-                sns.barplot(x=runs_wickets["Match_No"], y=runs_wickets["Runs_Scored"], palette="viridis", ax=ax[0])
-                ax[0].set_xlabel("Match Number", fontsize=12)
-                ax[0].set_ylabel("Runs Scored", fontsize=12)
-                ax[0].set_title("Runs Scored in each Match", fontsize=10, fontweight="bold")
+                fig, ax = plt.subplots(1, 2, figsize=(SIDE_W, SIDE_H), dpi=120)
+                n_matches = len(runs_wickets)
+                run_colors  = sns.color_palette(BATTING_CMAP, n_matches)
+                bowl_colors = sns.color_palette(BOWLING_CMAP, n_matches)
+
+                sns.barplot(x=runs_wickets["Match_No"], y=runs_wickets["Runs_Scored"],   palette=run_colors,  ax=ax[0])
+                ax[0].set_xlabel("Match Number", fontsize=11)
+                ax[0].set_ylabel("Runs Scored", fontsize=11)
+                ax[0].set_title("Runs Scored in Each Match", fontsize=12, fontweight="bold")
                 ax[0].grid(axis='y', linestyle='--', alpha=0.4)
 
-                sns.barplot(x=runs_wickets["Match_No"], y=runs_wickets["Wickets_Taken"], palette="viridis", ax=ax[1])
-                ax[1].set_xlabel("Match Number", fontsize=12)
-                ax[1].set_ylabel("Wickets Taken", fontsize=12)
-                ax[1].set_title("Wickets Taken in each Match", fontsize=10, fontweight="bold")
+                sns.barplot(x=runs_wickets["Match_No"], y=runs_wickets["Wickets_Taken"], palette=bowl_colors, ax=ax[1])
+                ax[1].set_xlabel("Match Number", fontsize=11)
+                ax[1].set_ylabel("Wickets Taken", fontsize=11)
+                ax[1].set_title("Wickets Taken in Each Match", fontsize=12, fontweight="bold")
                 ax[1].grid(axis='y', linestyle='--', alpha=0.4)
 
                 plt.tight_layout()
                 st.pyplot(fig)
+                plt.close(fig)
 
                 st.divider()
 
-                st.markdown("## Team Performance Summary")
-                st.markdown(" ")
+                # ── KPI cards row ──
+                st.markdown("""
+                <div style="font-family:'Rajdhani',sans-serif; font-weight:700;
+                            font-size:24px; color:#e0c070; margin:6px 0 14px 0;
+                            letter-spacing:0.4px;">
+                    🏆 Key Performance Indicators
+                </div>
+                """, unsafe_allow_html=True)
 
-                # ── FIX 5: Safe .iloc[] access with empty-DataFrame guards
-                # to prevent IndexError if any filtered group has no rows.
+                c1, c2, c3, c4 = st.columns(4)
+                with c1:
+                    kpi_card("🏏", "Top Run Scorer",    f"{top_scorer}",    f"{top_scorer_runs} runs off {top_scorer_balls} balls")
+                with c2:
+                    kpi_card("⚾", "Top Wicket Taker",  f"{top_wicket_taker}",  f"{top_wicket_taker_w} wickets")
+                with c3:
+                    kpi_card("⚡", "Best Strike Rate",  f"{top_sr_player}",  f"SR: {top_sr_value}")
+                with c4:
+                    kpi_card("💰", "Best Econ. Rate", f"{top_eco_player}", f"ER: {top_eco_value}")
 
-                top_scorer = runs_difference_s.iloc[0]["Player_Name"] if not runs_difference_s.empty else "N/A"
-                top_scorer_runs = runs_difference_s.iloc[0]["Runs_Scored"] if not runs_difference_s.empty else 0
+                st.markdown("<br>", unsafe_allow_html=True)
 
-                top_wicket_taker = bowling_diff_s.iloc[0]["Player_Name"] if not bowling_diff_s.empty else "N/A"
-                top_wicket_taker_w = bowling_diff_s.iloc[0]["Wickets_Taken"] if not bowling_diff_s.empty else 0
+                # ── Narrative insight lines ──
+                st.markdown("""
+                <div style="font-family:'Rajdhani',sans-serif; font-weight:700;
+                            font-size:22px; color:#e0c070; margin:10px 0 12px 0;">
+                    📋 Team Performance Summary
+                </div>
+                """, unsafe_allow_html=True)
 
-                top_sr_player = strike_rate_diff_s.iloc[0]["Player_Name"] if not strike_rate_diff_s.empty else "N/A"
-                top_sr_value = strike_rate_diff_s.iloc[0]["Strike_Rate"] if not strike_rate_diff_s.empty else 0
+                insight_line(1, f"<strong>{top_scorer}</strong> is the highest run scorer with <strong>{top_scorer_runs} runs</strong>.")
+                insight_line(2, f"<strong>{top_wicket_taker}</strong> is the highest wicket taker with <strong>{top_wicket_taker_w} wickets</strong>.")
+                insight_line(3, f"<strong>{top_sr_player}</strong> has the highest strike rate of <strong>{top_sr_value}</strong>.")
+                insight_line(4, f"<strong>{top_eco_player}</strong> has the best bowling economy rate of <strong>{top_eco_value}</strong>.")
+                insight_line(5, f"<strong>{runs_role_1}s</strong> are the highest contributors in scoring runs with <strong>{runs_role_1_val} runs</strong>, followed by <strong>{runs_role_2}s</strong> with <strong>{runs_role_2_val} runs</strong>.")
+                insight_line(6, f"<strong>{wkt_role_1}s</strong> are the highest contributors in taking wickets with <strong>{wkt_role_1_val} wickets</strong>, followed by <strong>{wkt_role_2}s</strong> with <strong>{wkt_role_2_val} wickets</strong>.")
+                insight_line(7, f"The <strong>{top_order} order</strong> is the strongest batting unit, followed by the <strong>{second_order} order</strong>.")
+                insight_line(8, f"The team has lost the most wickets in the <strong>{top_phase}</strong>, losing <strong>{top_phase_wkts.astype(int)} wickets</strong>.")
 
-                top_eco_player = economy_diff_s.iloc[0]["Player_Name"] if not economy_diff_s.empty else "N/A"
-                top_eco_value = economy_diff_s.iloc[0]["Economy_Rate"] if not economy_diff_s.empty else 0
+                #st.divider()
+                st.markdown("<div style='height:50px;'></div>", unsafe_allow_html=True)
 
-                runs_role_1 = runs_contribution_by_role_s.iloc[0]["Role"] if len(runs_contribution_by_role_s) > 0 else "N/A"
-                runs_role_1_val = runs_contribution_by_role_s.iloc[0]["Runs_Scored"] if len(runs_contribution_by_role_s) > 0 else 0
-                runs_role_2 = runs_contribution_by_role_s.iloc[1]["Role"] if len(runs_contribution_by_role_s) > 1 else "N/A"
-                runs_role_2_val = runs_contribution_by_role_s.iloc[1]["Runs_Scored"] if len(runs_contribution_by_role_s) > 1 else 0
-
-                wkt_role_1 = wickets_contribution_by_role_s.iloc[0]["Role"] if len(wickets_contribution_by_role_s) > 0 else "N/A"
-                wkt_role_1_val = wickets_contribution_by_role_s.iloc[0]["Wickets_Taken"] if len(wickets_contribution_by_role_s) > 0 else 0
-                wkt_role_2 = wickets_contribution_by_role_s.iloc[1]["Role"] if len(wickets_contribution_by_role_s) > 1 else "N/A"
-                wkt_role_2_val = wickets_contribution_by_role_s.iloc[1]["Wickets_Taken"] if len(wickets_contribution_by_role_s) > 1 else 0
-
-                top_order = order_runs_s.iloc[0]["Batting_Order"] if len(order_runs_s) > 0 else "N/A"
-                second_order = order_runs_s.iloc[1]["Batting_Order"] if len(order_runs_s) > 1 else "N/A"
-
-                top_phase = phase_wickets_s.iloc[0]["Wicket_Phase"] if not phase_wickets_s.empty else "N/A"
-                top_phase_wkts = phase_wickets_s.iloc[0]["Wickets_Lost"] if not phase_wickets_s.empty else 0
-
-                st.markdown(
-                    f"""
-**1.** **{top_scorer}** is the highest run scorer with **{top_scorer_runs} runs**.
-
-**2.** **{top_wicket_taker}** is the highest wicket taker with **{top_wicket_taker_w} wickets**.
-
-**3.** **{top_sr_player}** has the highest strike rate of **{top_sr_value}**.
-
-**4.** **{top_eco_player}** has the best bowling economy rate of **{top_eco_value}**.
-
-**5.** **{runs_role_1}** are the highest contributors in scoring total runs with **{runs_role_1_val} runs**, followed by **{runs_role_2}** with **{runs_role_2_val} runs**.
-
-**6.** **{wkt_role_1}s** are the highest contributors in taking wickets with **{wkt_role_1_val} wickets**, followed by **{wkt_role_2}s** with **{wkt_role_2_val} wickets**.
-
-**7.** The **{top_order} order** is the strongest batting order followed by the **{second_order} order**.
-
-**8.** The team has lost most wickets in the **{top_phase}**, losing **{top_phase_wkts} wickets**.
-                    """
-                )
-
-                st.divider()
-
-
+    # ══════════════════════════════════════════════════════
+    # ABOUT PAGE
+    # ══════════════════════════════════════════════════════
     elif page == "About":
 
-        st.markdown(
-            "<h2 style='text-align:center;'>&#127951; T20 Team Performance Analyzer</h2>",
-            unsafe_allow_html=True
-        )
-
-        st.markdown(
-            """
-            <p style='text-align:center; color:gray; font-size:18px;'>
-            Data-Driven Analysis of Your T20 Team Performance
+        st.markdown("""
+        <div style="text-align:center; padding:24px 0 6px 0;">
+            <h1 style="font-family:'Rajdhani',sans-serif; font-weight:700;
+                       font-size:38px; color:#e0c070; margin:0; letter-spacing:1px;">
+                🏏 T20 Team Performance Analyzer
+            </h1>
+            <p style="font-family:'Rajdhani',sans-serif; font-size:16px;
+                      color:#8b949e; margin:6px 0 0 0;">
+                Data-Driven Analysis of Your T20 Team Performance
             </p>
-            """,
-            unsafe_allow_html=True
-        )
+        </div>
+        """, unsafe_allow_html=True)
 
         st.divider()
 
-        with st.expander("👨‍💻 About the Developer : Pranay Jha", expanded=False):
+        with st.expander("👨‍💻 About the Developer — Pranay Jha", expanded=False):
             st.markdown("""
-            Hello! My name is **Pranay Jha**, and I am currently pursuing a **Bachelor of Technology (B.Tech) in Computer Science and Engineering**.  
-            I am actively learning and exploring the fields of **Data Science, Data Analytics, and Data Visualization**.
+            <div style="font-family:'Rajdhani',sans-serif; font-size:14px;
+                        color:#e6edf3; line-height:1.8;">
+                Hello! My name is <strong style="color:#e0c070;">Pranay Jha</strong>, and I am currently pursuing a
+                <strong style="color:#e0c070;">Bachelor of Technology (B.Tech) in Computer Science and Engineering</strong>.<br><br>
+                I am actively learning and exploring the fields of <strong style="color:#e0c070;">Data Science, Data Analytics,
+                and Data Visualization</strong>.<br><br>
+                This project — <strong style="color:#c9a84c;">T20 Cricket Team Performance Analyzer</strong> — has been developed
+                as part of my learning journey in data analytics. The main goal is to demonstrate how structured data analysis
+                and interactive dashboards can evaluate sports performance effectively.<br><br>
+                The tool uses Python libraries including <strong style="color:#2dd4bf;">NumPy, Pandas, Matplotlib, Seaborn,
+                and Streamlit</strong>.
+            </div>
+            """, unsafe_allow_html=True)
 
-            This project, **T20 Cricket Team Performance Analyzer**, has been developed as part of my learning journey in data analytics.  
-            The main goal of this project is to demonstrate how **structured data analysis and interactive dashboards** can be used to evaluate sports performance more effectively.
+            st.markdown("<br>", unsafe_allow_html=True)
 
-            Through this project, I focused on applying practical data analysis techniques using Python libraries such as **NumPy, Pandas, Matplotlib, Seaborn, and Streamlit**.  
+            st.markdown("""
+            <p style="font-family:'Rajdhani',sans-serif; font-weight:700;
+                       font-size:17px; color:#c9a84c; margin-bottom:8px;">
+                🚀 Key Highlights
+            </p>
+            """, unsafe_allow_html=True)
 
-            The tool allows users to upload cricket match datasets and instantly generate insights about **batting performance, bowling performance, player consistency, and match-level statistics**.
-            """)
-            st.markdown("#### 🚀 Key Highlights")
-            st.markdown("""
-            - Work with **real-world structured datasets**  
-            - Perform **data cleaning and feature engineering**  
-            - Build **interactive analytical dashboards**  
-            - Communicate insights through **data visualization**  
-            - Design **user-friendly analytical tools**
-            """)
-            st.markdown("My aim is to continue improving my skills in **data analytics, machine learning, and dashboard development**, and build more practical projects that solve real-world problems using data.")
-            st.markdown("---")
-            st.markdown("#### Connect With Me")
-            st.markdown("""
-            🔗 **GitHub:** [Pranay-256](https://github.com/Pranay-256)  
-            💼 **LinkedIn:** [Pranay Jha](https://www.linkedin.com/in/pranay-jha-6582a937b/)
-            """)
+            for item in [
+                "Work with <strong>real-world structured datasets</strong>",
+                "Perform <strong>data cleaning and feature engineering</strong>",
+                "Build <strong>interactive analytical dashboards</strong>",
+                "Communicate insights through <strong>data visualization</strong>",
+                "Design <strong>user-friendly analytical tools</strong>",
+            ]:
+                st.markdown(f"""
+                <div style="background:#1c2330; border:1px solid #2a3444; border-radius:6px;
+                            padding:8px 14px; margin-bottom:6px; font-family:'Rajdhani',sans-serif;
+                            font-size:14px; color:#e6edf3;">
+                    ▸ &nbsp;{item}
+                </div>
+                """, unsafe_allow_html=True)
 
-        with st.expander("❗ Problem Statement for this Project", expanded=False):
+            st.markdown("<br>", unsafe_allow_html=True)
+
             st.markdown("""
-            In many **local cricket matches, school tournaments, inter-college competitions, and small community leagues**, 
-            player performance evaluation is usually done **manually or based on personal observation**. 
-            This creates several limitations and challenges.
-            """)
-            st.markdown("#### ⚠️ Key Challenges")
+            <p style="font-family:'Rajdhani',sans-serif; font-weight:700;
+                       font-size:17px; color:#c9a84c; margin-bottom:8px;">
+                🔗 Connect With Me
+            </p>
+            """, unsafe_allow_html=True)
+
             st.markdown("""
-            - **Player contributions are often judged subjectively** rather than using actual performance statistics  
-            - Awards such as **Best Batsman or Best Bowler** may not always be fairly decided  
-            - **Bowling performance is usually evaluated only by wickets**, ignoring economy rate and consistency  
-            - **Match-to-match performance comparison becomes difficult** without proper records  
-            - Lack of a **structured data system** for multi-match performance analysis  
-            """)
-            st.markdown("Because of these issues, it becomes difficult for teams, organizers, and players to **fairly evaluate performance and identify strengths and weaknesses**.")
+            <div style="display:flex; gap:14px; flex-wrap:wrap;">
+                <a href="https://github.com/Pranay-256" target="_blank"
+                   style="display:inline-flex; align-items:center; gap:8px;
+                          background:#1c2330; border:1px solid #2a3444;
+                          border-radius:8px; padding:10px 18px;
+                          font-family:'Rajdhani',sans-serif; font-size:14px;
+                          color:#e6edf3; text-decoration:none;
+                          transition:border-color 0.2s;">
+                    <span style="font-size:18px;">🐙</span>
+                    <strong>GitHub</strong> — Pranay-256
+                </a>
+                <a href="https://www.linkedin.com/in/pranay-jha-6582a937b/" target="_blank"
+                   style="display:inline-flex; align-items:center; gap:8px;
+                          background:#1c2330; border:1px solid #2a3444;
+                          border-radius:8px; padding:10px 18px;
+                          font-family:'Rajdhani',sans-serif; font-size:14px;
+                          color:#e6edf3; text-decoration:none;">
+                    <span style="font-size:18px;">💼</span>
+                    <strong>LinkedIn</strong> — Pranay Jha
+                </a>
+            </div>
+            """, unsafe_allow_html=True)
+            st.markdown("<br>", unsafe_allow_html=True)
+
+        with st.expander("❗ Problem Statement", expanded=False):
+            st.markdown("""
+            <div style="font-family:'Rajdhani',sans-serif; font-size:14px;
+                        color:#e6edf3; line-height:1.8; margin-bottom:10px;">
+                In many <strong style="color:#e0c070;">local cricket matches, school tournaments, inter-college
+                competitions, and community leagues</strong>, player performance is usually evaluated
+                <strong>manually or based on personal observation</strong>. This creates several limitations.
+            </div>
+            """, unsafe_allow_html=True)
+
+            st.markdown("""
+            <p style="font-family:'Rajdhani',sans-serif; font-weight:700;
+                       font-size:17px; color:#c9a84c; margin:8px 0;">⚠️ Key Challenges</p>
+            """, unsafe_allow_html=True)
+
+            for item in [
+                "Player contributions are often judged <strong>subjectively</strong>",
+                "Awards like <strong>Best Batsman / Bowler</strong> may not always be fairly decided",
+                "Bowling performance is usually evaluated <strong>only by wickets</strong>, ignoring economy rate",
+                "<strong>Match-to-match comparison</strong> is difficult without proper records",
+                "Lack of a <strong>structured data system</strong> for multi-match analysis",
+            ]:
+                st.markdown(f"""
+                <div style="background:#1c2330; border:1px solid #2a3444; border-left:3px solid #e05252;
+                            border-radius:0 6px 6px 0; padding:8px 14px; margin-bottom:6px;
+                            font-family:'Rajdhani',sans-serif; font-size:14px; color:#e6edf3;">
+                    {item}
+                </div>
+                """, unsafe_allow_html=True)
+                
 
         with st.expander("🎯 Objective", expanded=False):
             st.markdown("""
-            The main objective of this project is to build a **clear, structured, and unbiased cricket performance analysis system** using match-level data.
+            <div style="font-family:'Rajdhani',sans-serif; font-size:14px;
+                        color:#e6edf3; line-height:1.8; margin-bottom:10px;">
+                The main objective is to build a <strong style="color:#e0c070;">clear, structured, and unbiased
+                cricket performance analysis system</strong> using match-level data — replacing manual judgements
+                with <strong>data-driven insights</strong>.
+            </div>
+            """, unsafe_allow_html=True)
 
-            Instead of relying on manual judgments, the system uses **data-driven insights** to evaluate team and player performances.
-            """)
-            st.markdown("#### 📊 Core Focus Areas")
             st.markdown("""
-            - Measuring **individual batting contribution**  
-            - Evaluating **bowling impact using wickets and economy rate**  
-            - Measuring **player consistency across multiple matches**  
-            - Comparing performances between roles such as **batsman, bowler, and all-rounder**  
-            - Providing **fair statistical summaries** for team performance evaluation  
-            """)
-            st.markdown("#### 🏏 Target Users")
+            <p style="font-family:'Rajdhani',sans-serif; font-weight:700;
+                       font-size:17px; color:#c9a84c; margin:8px 0;">📊 Core Focus Areas</p>
+            """, unsafe_allow_html=True)
+
+            for item in [
+                "Measuring <strong>individual batting contribution</strong>",
+                "Evaluating <strong>bowling impact</strong> using wickets and economy rate",
+                "Measuring <strong>player consistency</strong> across multiple matches",
+                "Comparing performances between <strong>batsmen, bowlers, and all-rounders</strong>",
+                "Providing <strong>fair statistical summaries</strong> for team evaluation",
+            ]:
+                st.markdown(f"""
+                <div style="background:#1c2330; border:1px solid #2a3444; border-left:3px solid #3fb950;
+                            border-radius:0 6px 6px 0; padding:8px 14px; margin-bottom:6px;
+                            font-family:'Rajdhani',sans-serif; font-size:14px; color:#e6edf3;">
+                    ✓ &nbsp;{item}
+                </div>
+                """, unsafe_allow_html=True)
+
             st.markdown("""
-            - **Local cricket teams**  
-            - **Gully cricket players**  
-            - **School and college tournaments**  
-            - **Small-scale cricket competitions**  
-            - Teams seeking **simple data-based performance evaluation without advanced tools**  
-            """)
-            st.markdown("The system ensures that decisions and evaluations are **based on actual data rather than opinion**.")
+            <p style="font-family:'Rajdhani',sans-serif; font-weight:700;
+                       font-size:17px; color:#c9a84c; margin:8px 0;">🏏 Target Users</p>
+            """, unsafe_allow_html=True)
+
+            targets = ["Local cricket teams", "Gully cricket players", "School & college tournaments",
+                       "Small-scale cricket competitions", "Teams seeking simple data-based evaluation"]
+            cols = st.columns(3)
+            for i, t in enumerate(targets):
+                with cols[i % 3]:
+                    st.markdown(f"""
+                    <div style="background:#1c2330; border:1px solid #2a3444; border-radius:8px;
+                                padding:8px 12px; margin-bottom:8px; text-align:center;
+                                font-family:'Rajdhani',sans-serif; font-size:13px; color:#e6edf3;">
+                        {t}
+                    </div>
+                    """, unsafe_allow_html=True)
 
         with st.expander("🛠️ Tech Stack", expanded=False):
-            st.markdown("This project has been developed using the **Python data analytics ecosystem** along with an interactive dashboard framework.")
-            st.markdown("#### ⚙️ Tools & Libraries Used")
             st.markdown("""
-            - **Python** – Core programming language used for data processing and analytics  
-            - **NumPy** – Used for numerical operations and handling structured numeric data efficiently  
-            - **Pandas** – Used for data cleaning, manipulation, aggregation, and analysis  
-            - **Matplotlib** – Used to create charts and plots for visualizing performance statistics  
-            - **Seaborn** – Used for enhanced statistical and aesthetically improved visualizations  
-            - **Streamlit** – Used to build the interactive dashboard for dynamic data exploration  
-            """)
-            st.markdown("Together, these tools help transform **raw match data into meaningful insights and visual analytics**.")
+            <p style="font-family:'Rajdhani',sans-serif; font-size:14px; color:#e6edf3;
+                      line-height:1.8; margin-bottom:10px;">
+                Built using the <strong style="color:#e0c070;">Python data analytics ecosystem</strong>
+                combined with an interactive dashboard framework.
+            </p>
+            """, unsafe_allow_html=True)
 
-        with st.expander("📊 Analytical Approach and Visualizations", expanded=False):
-            st.markdown("The analysis in this dashboard is divided into two major sections: **Batting Analytics** and **Bowling Analytics**.")
-            st.markdown("#### 🏏 Batting Analysis")
-            st.markdown("""
-            - Individual runs scored by players  
-            - Total runs contribution by top players  
-            - Player runs scored across matches  
-            - Strike rate comparison between batsmen and all-rounders  
-            - Role-wise contribution in total runs scored  
-            - Player batting consistency across matches  
-            - Batting order strength analysis  
-            """)
-            st.markdown("#### 🎯 Bowling Analysis")
-            st.markdown("""
-            - Individual wickets taken by bowlers  
-            - Total wickets contribution by players  
-            - Wickets taken by players across matches  
-            - Wickets contribution based on player roles  
-            - Economy rate comparison between bowlers and all-rounders  
-            - Player bowling consistency across matches  
-            """)
-            st.markdown("#### 📈 Visualization Techniques")
-            st.markdown("""
-            - **Bar Charts / Horizontal Bar Charts** – Compare player performances clearly  
-            - **Pie Charts** – Show contribution percentages (runs and wickets)  
-            - **Line Charts** – Analyze performance trends across matches  
-            - **Grouped Bar Charts** – Compare match-level statistics (runs, wickets)  
-            """)
-            st.markdown("These visualizations transform **raw numerical data into clear, interpretable insights** for better performance evaluation.")
+            tools = [
+                ("🐍 Python",      "Core language for data processing and analytics"),
+                ("🔢 NumPy",       "Numerical operations and structured numeric data"),
+                ("🐼 Pandas",      "Data cleaning, manipulation, and aggregation"),
+                ("📉 Matplotlib",  "Charts and plots for visualizing statistics"),
+                ("🎨 Seaborn",     "Enhanced statistical and aesthetic visualizations"),
+                ("🚀 Streamlit",   "Interactive dashboard for dynamic data exploration"),
+            ]
+            for name, desc in tools:
+                st.markdown(f"""
+                <div style="background:#1c2330; border:1px solid #2a3444; border-radius:8px;
+                            padding:10px 16px; margin-bottom:7px; display:flex;
+                            font-family:'Rajdhani',sans-serif; font-size:14px; color:#e6edf3;
+                            gap:10px; align-items:flex-start;">
+                    <strong style="color:#c9a84c; min-width:110px;">{name}</strong>
+                    <span style="color:#8b949e;">{desc}</span>
+                </div>
+                """, unsafe_allow_html=True)
+
+        with st.expander("📊 Analytical Approach & Visualizations", expanded=False):
+
+            def analysis_block(emoji, title, items):
+                st.markdown(f"""
+                <div style="background:#1c2330; border:1px solid #2a3444; border-radius:8px;
+                            padding:12px 16px; margin-bottom:10px;">
+                    <p style="font-family:'Rajdhani',sans-serif; font-weight:700;
+                              font-size:17px; color:#c9a84c; margin:0 0 6px 0;">
+                        {emoji} {title}
+                    </p>
+                    {''.join(f"<p style='font-family:Rajdhani,sans-serif; font-size:14px; color:#e6edf3; margin:3px 0;'>▸ &nbsp;{item}</p>" for item in items)}
+                </div>
+                """, unsafe_allow_html=True)
+        
+            analysis_block("🏏", "Batting Analysis", [
+                "Individual runs scored",
+                "Total runs contribution",
+                "Runs per match per player",
+                "Strike rate comparison",
+                "Role-wise contribution",
+                "Batting consistency",
+                "Batting order strength",
+            ])
+        
+            analysis_block("🎯", "Bowling Analysis", [
+                "Individual wickets taken",
+                "Total wickets contribution",
+                "Wickets per match per player",
+                "Role-wise wicket contribution",
+                "Economy rate comparison",
+                "Bowling consistency",
+            ])
 
         with st.expander("🔄 Recent Updates", expanded=False):
-            st.markdown("#### ✨ Version Information")
-            st.markdown("**Current Version:** 2.01  \n**Last Updated On:** 11th April 2026")
-            st.markdown("""
-            - Improved overall **tool user interface**  
-            - Improved **data validation and cleaning**  
-            - Added drop-down expanders for **Dataset Columns Overview and About Section**
-            - Improved **visualization clarity and chart styling**  
-            - Improved **logic for line charts**  
-            - Improved **logic for Runs/Wickets Contributions**                      
-            - Organized insights into **clear analytical sections**  
-            """)
-            st.markdown("#### 🕘 Previous Update")
-            st.markdown("**Version:** 2.0  \n**Updated On:** 16th March 2026")
-            st.markdown("""
-            - Improved overall **tool user interface**  
-            - Added support for **.xlsx dataset uploads**  
-            - Enhanced **data validation and cleaning**  
-            - Added **more detailed batting and bowling analytics**  
-            - Improved **visualization clarity and chart styling**  
-            - Added **interactive player performance analysis**  
-            - Organized insights into **clear analytical sections**  
-            """)
-            st.markdown("#### 🏁 Initial Release")
-            st.markdown("**27th February 2026**")
 
-        st.divider()
+            def version_block(version, date, items):
+                st.markdown(f"""
+                <div style="background:#1c2330; border:1px solid #2a3444; border-radius:8px;
+                            padding:12px 16px; margin-bottom:10px;">
+                    <p style="font-family:'Rajdhani',sans-serif; font-weight:700;
+                              font-size:16px; color:#c9a84c; margin:0 0 4px 0;">
+                        Version {version} &nbsp;·&nbsp;
+                        <span style="color:#8b949e; font-size:14px; font-weight:500;">{date}</span>
+                    </p>
+                    {''.join(f"<p style='font-family:Rajdhani,sans-serif; font-size:13px; color:#e6edf3; margin:3px 0;'>— {i}</p>" for i in items)}
+                </div>
+                """, unsafe_allow_html=True)
 
-# -------------------------------------------------
+            version_block("2.01", "14th April 2026", [
+                "Improved overall tool user interface",
+                "Improved data validation and cleaning",
+                "Added drop-down expanders for Dataset Columns Overview and About Section",
+                "Improved visualization clarity and chart styling",
+                "Added KPI cards for key performance indicators in the Summary tab",
+                "Improved logic for line charts and Runs/Wickets Contributions",
+                "Organized insights into clear analytical sections",
+            ])
+            version_block("2.0", "16th March 2026", [
+                "Improved overall tool user interface",
+                "Added support for .xlsx dataset uploads",
+                "Enhanced data validation and cleaning",
+                "Added more detailed batting and bowling analytics",
+                "Improved visualization clarity",
+                "Added interactive player performance analysis",
+            ])
+            version_block("1.0", "27th February 2026", ["Initial release"])
+
+        #st.divider()
+        st.markdown("<div style='height:50px;'></div>", unsafe_allow_html=True)
+
+# ─────────────────────────────────────────────────────────────
 # FOOTER
-# -------------------------------------------------
-
+# ─────────────────────────────────────────────────────────────
 render_footer()
