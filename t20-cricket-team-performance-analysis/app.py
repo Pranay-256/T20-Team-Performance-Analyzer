@@ -583,7 +583,7 @@ def render_footer():
     </div>
 
     <p class="footer-credit">Developed by Pranay Jha &nbsp;|&nbsp; Powered by Python and Streamlit</p>
-    """, height=180)
+    """, height=220)
 
 # ─────────────────────────────────────────────────────────────
 # SIDEBAR
