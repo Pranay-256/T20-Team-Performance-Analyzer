@@ -423,6 +423,8 @@ def data_validation(df):
 
     invalid_over = out_over_numeric > 20
 
+    match_player_counts = df.groupby("Match_No")["Player_Name"].nunique()
+
     bat_stats = (df["Batting_Start_Over"].isnull() &
                 (df["Out_Over"].notnull() |
                  df["Balls_Played"].notnull() |
@@ -441,6 +443,7 @@ def data_validation(df):
                   (df["Runs_Given"].notnull() | df["Wickets_Taken"].notnull()))
     
     bowl_stats2 = ((df["Overs_Bowled"].notnull()) &
+                  (df["Overs_Bowled"] > 0) & 
                   (df["Runs_Given"].isnull() | df["Wickets_Taken"].isnull()))
 
     invalid_player = ((df["Player_Name"].isnull()) &
@@ -459,6 +462,10 @@ def data_validation(df):
 
     if invalid_over.any():
         raise ValueError("Current Version only supports T20 data (Out_Over cannot exceed 20)")
+    if (match_player_counts > 11).any():
+        raise ValueError("A single match cannot have more than 11 players")
+    if df["Player_Name"].nunique() > 22:
+        raise ValueError("Dataset contains too many unique players. Please limit uploads to 2 matches at a time.")
     if no_match.any():
         raise ValueError("Some players don't have Match Number information")
     elif no_position.any():
@@ -482,6 +489,7 @@ def process_data(df):
 
     df2["Role"] = df2["Role"].str.strip().str.lower()
     df2["Role"] = df2["Role"].fillna(df2["Role"].mode()[0])
+    df2["Role"] = df2["Role"].replace("wicketkeeper", "batsman")
 
     df2["Batting_Start_Over"] = df2["Batting_Start_Over"].fillna(0)
 
@@ -583,7 +591,7 @@ def render_footer():
     </div>
 
     <p class="footer-credit">Developed by Pranay Jha &nbsp;|&nbsp; Powered by Python and Streamlit</p>
-    """, height=220)
+    """, height=240)
 
 # ─────────────────────────────────────────────────────────────
 # SIDEBAR
@@ -606,7 +614,7 @@ with st.sidebar:
     <div style="font-family:'Rajdhani',sans-serif; font-size:13px;
                 color:#8b949e; line-height:1.9; padding:4px 0;">
         <strong style="color:#c9a84c;">Current Version:</strong> 2.01<br>
-        <strong style="color:#c9a84c;">Last Updated:</strong> 14th April 2026<br>
+        <strong style="color:#c9a84c;">Last Updated:</strong> 18th April 2026<br>
         <strong style="color:#c9a84c;">Initial Release:</strong> 27th February 2026
     </div>
     """, unsafe_allow_html=True)
@@ -683,6 +691,11 @@ with center:
             else:
                 uploaded_files = st.file_uploader("Upload Multiple Datasets", type=["csv","xlsx"], accept_multiple_files=True)
 
+            if uploaded_files is None or uploaded_files == []:
+                if st.session_state.df2 is not None:
+                    st.session_state.df2 = None
+                    st.rerun()    
+
             st.markdown("""
             <p style="color:#8b949e; font-size:13px; margin-top:6px;">
                 A single dataset may contain data from one match or multiple matches combined.
@@ -734,21 +747,93 @@ with center:
             """, unsafe_allow_html=True)
 
             with st.expander("🙎 Match & Player Info", expanded=False):
-                column_info("Match_No",    "Enter the match number to which the player's performance belongs. Null values are NOT allowed. Preferred datatype: Integer.")
-                column_info("Player_Name", "Enter the name of the player whose statistics are being recorded. Null values are NOT allowed. Preferred datatype: String.")
-                column_info("Role",        "Enter the player's role — batsman, bowler, or all-rounder. Null values are allowed and will be auto-filled with the most common role. Preferred datatype: String.")
+                column_info("Match_No",
+                    "The match number this player's performance belongs to. "
+                    "Use 1 for your first match, 2 for your second, and so on. "
+                    "Every row must have a match number — blank values are NOT allowed. "
+                    "Preferred datatype: Integer (whole number, e.g. 1, 2, 3).")
+            
+                column_info("Player_Name",
+                    "The full name or short name of the player. Every row must have a name — "
+                    "blank values are NOT allowed. Use the same spelling consistently across all matches; "
+                    "for example do not write 'Virat Kohli' in one match and 'V Kohli' in another, "
+                    "as the tool will treat them as two different players. "
+                    "Preferred datatype: Text (e.g. Rohit Sharma).")
+            
+                column_info("Role",
+                    "The player's role in the team. Accepted values are: batsman, bowler, all-rounder, wicketkeeper. "
+                    "Capitalisation do not matter — 'Batsman', 'BATSMAN', and 'batsman' are all accepted. However, spelling must be consistent same as the accepted values. "
+                    "Blank values are allowed and will be auto-filled with the most common role in the dataset. "
+                    "Important: A wicketkeeper who also bats can be entered as wicketkeeper or batsman. If entered wicketkeeper, they will be treated as a batsman for batting stats. "
+                    "Preferred datatype: Text.")
 
             with st.expander("🏏 Batting Info", expanded=False):
-                column_info("Batting_Position",   "Enter the batting order position (1–11). Null values are NOT allowed. Preferred datatype: Integer.")
-                column_info("Batting_Start_Over",  "Enter the over when the player started batting. Leave blank if the player did not bat. Preferred datatype: Numeric.")
-                column_info("Out_Over",            "Enter the over the player got out. Use 'not-out' or leave blank if the player remained not-out. Preferred datatype: Numeric or String.")
-                column_info("Balls_Played",        "Enter total balls faced. Leave blank if the player did not bat. Preferred datatype: Integer.")
-                column_info("Runs_Scored",         "Enter total runs scored. Leave blank if the player did not bat. Preferred datatype: Integer.")
+                column_info("Batting_Position",
+                    "The position at which this player came in to bat, from 1 (opener) to 11 (last). "
+                    "Every row must have a batting position — blank values are NOT allowed. "
+                    "If two players opened the batting, one gets position 1 and the other gets position 2. "
+                    "Do not repeat the same position number for two players in the same match. "
+                    "Preferred datatype: Integer (whole number from 1 to 11).")
+            
+                column_info("Batting_Start_Over",
+                    "The over number when this player walked in to bat. "
+                    "For example, if a player came in during over 4, enter 4. "
+                    "If they came in mid-over (e.g. during the 3rd ball of over 6), you can enter 6.3. "
+                    "Leave this blank ONLY if the player did not bat at all in that match. "
+                    "This value must always be less than or equal to Out_Over. "
+                    "Preferred datatype: Numeric (e.g. 1, 4, 6.3).")
+            
+                column_info("Out_Over",
+                    "The over number when this player got out. "
+                    "For example, if a player was dismissed in over 14, enter 14. "
+                    "If the player was NOT OUT (finished the innings without getting dismissed), "
+                    "leave this blank or write 'not-out' — both are accepted. "
+                    "This value must always be greater than or equal to Batting_Start_Over. "
+                    "Cannot exceed 20 (this tool only supports T20 matches). "
+                    "Preferred datatype: Numeric or leave blank / write not-out for not-out players.")
+            
+                column_info("Balls_Played",
+                    "The total number of balls this player faced during their innings. "
+                    "For example, if a player faced 34 balls, enter 34. "
+                    "Leave blank ONLY if the player did not bat. "
+                    "If a player batted but faced 0 balls (extremely rare), enter 0. "
+                    "Must be filled if Batting_Start_Over is filled. "
+                    "Preferred datatype: Integer (whole number).")
+            
+                column_info("Runs_Scored",
+                    "The total runs scored by this player in their innings, including extras attributed to them. "
+                    "If a player got out for a duck (0 runs), enter 0 — do not leave blank. "
+                    "Leave blank ONLY if the player did not bat at all. "
+                    "Must be filled if Batting_Start_Over is filled. "
+                    "Preferred datatype: Integer (whole number, e.g. 0, 45, 102).")
 
             with st.expander("⚾ Bowling Info", expanded=False):
-                column_info("Overs_Bowled",  "Enter total overs bowled (e.g., 2.4). Leave blank if the player did not bowl. Preferred datatype: Float.")
-                column_info("Runs_Given",    "Enter total runs conceded. Leave blank only if the player did not bowl; missing values are auto-filled to 0 during cleaning. Preferred datatype: Integer.")
-                column_info("Wickets_Taken", "Enter number of wickets taken. Leave blank only if the player did not bowl; missing values are auto-filled to 0. Preferred datatype: Integer.")
+                column_info("Overs_Bowled",
+                    "The total overs bowled by this player in the match. "
+                    "For complete overs, enter a whole number (e.g. 4). "
+                    "For partial overs, use one decimal place where the digit after the decimal is the number of balls bowled — "
+                    "for example, 3.4 means 3 complete overs and 4 balls (NOT 3.4 overs mathematically). "
+                    "Valid ball values after the decimal are 1 through 5 only — "
+                    "for example 2.6 is invalid because an over only has 6 balls and .6 would mean a complete over. "
+                    "Leave blank or enter 0 if the player did not bowl. "
+                    "Preferred datatype: Numeric (e.g. 2, 3.4, 4.0).")
+            
+                column_info("Runs_Given",
+                    "The total runs conceded by this player while bowling (excluding extras not attributed to the bowler). "
+                    "If the player bowled but gave 0 runs, enter 0. "
+                    "Leave blank ONLY if the player did not bowl — blank values are auto-filled to 0 during cleaning "
+                    "for players who have Overs_Bowled filled. "
+                    "Must be filled if Overs_Bowled is filled. "
+                    "Preferred datatype: Integer (whole number, e.g. 0, 24, 56).")
+            
+                column_info("Wickets_Taken",
+                    "The number of wickets taken by this player while bowling. "
+                    "If the player bowled but took no wickets, enter 0 — do not leave blank. "
+                    "Leave blank ONLY if the player did not bowl — blank values are auto-filled to 0 during cleaning "
+                    "for players who have Overs_Bowled filled. "
+                    "Must be filled if Overs_Bowled is filled. "
+                    "Runouts are generally not credited to a bowler and should not be counted here. "
+                    "Preferred datatype: Integer (whole number, e.g. 0, 1, 2, 3).")
 
             st.divider()
 
@@ -781,6 +866,13 @@ with center:
 
                 # ── Individual runs ──
                 section_heading("🏏", "Individual Runs Scored by Players")
+                st.markdown("""
+                <p style="font-family:'Rajdhani',sans-serif; font-size:14px; color:#8b949e;
+                          margin: -6px 0 10px 0; line-height:1.6;">
+                    Total runs scored based on balls faced by each player across all matches,
+                    sorted from highest to lowest scorer.
+                </p>
+                """, unsafe_allow_html=True)
 
                 done_batting = df2[df2["Balls_Played"] > 0]
 
@@ -810,6 +902,12 @@ with center:
 
                 # ── Runs contribution pie ──
                 section_heading("📊", "Total Runs Contribution")
+                st.markdown("""
+                <p style="font-family:'Rajdhani',sans-serif; font-size:14px; color:#8b949e;
+                          margin: -6px 0 10px 0; line-height:1.6;">
+                    Contribution of runs scored by each player to the team's total runs across all matches.
+                </p>
+                """, unsafe_allow_html=True)                
 
                 top_batters  = runs_difference[["Player_Name","Runs_Scored"]].head(5).reset_index(drop=True)
                 other_runs   = runs_difference["Runs_Scored"].sum().astype(int) - top_batters["Runs_Scored"].sum().astype(int)
@@ -844,6 +942,12 @@ with center:
 
                 # ── Runs per match ──
                 section_heading("📈", "Player's Total Runs in Each Match")
+                st.markdown("""
+                <p style="font-family:'Rajdhani',sans-serif; font-size:14px; color:#8b949e;
+                          margin: -6px 0 10px 0; line-height:1.6;">
+                    Total runs scored by each player in each match, allows tracking of performance trends across matches by selecting the player.
+                </p>
+                """, unsafe_allow_html=True)                
 
                 if done_batting["Match_No"].nunique() > 1:
                     players_list    = sorted(done_batting["Player_Name"].unique())
@@ -880,6 +984,12 @@ with center:
 
                 # ── Runs by role ──
                 section_heading("🎭", "Runs Scored Contribution Based on Roles")
+                st.markdown("""
+                <p style="font-family:'Rajdhani',sans-serif; font-size:14px; color:#8b949e;
+                          margin: -6px 0 10px 0; line-height:1.6;">
+                    Total runs scored by players based on their roles (batsman, bowler, all-rounder) across all matches.
+                </p>
+                """, unsafe_allow_html=True)                
 
                 runs_contribution_by_role = done_batting[done_batting["Runs_Scored"] > 0]
                 runs_contribution_by_role = (
@@ -916,6 +1026,12 @@ with center:
 
                 # ── Strike rate comparison ──
                 section_heading("⚡", "Strike-Rate Comparison — Batsmen vs All-Rounders")
+                st.markdown("""
+                <p style="font-family:'Rajdhani',sans-serif; font-size:14px; color:#8b949e;
+                          margin: -6px 0 10px 0; line-height:1.6;">
+                    Comparison of strike rates between batsmen and all-rounders for players who have played 10 or more balls, to identify who is scoring faster.
+                </p>
+                """, unsafe_allow_html=True) 
 
                 batters_allrounders = done_batting[
                     (done_batting["Role"] == "batsman") | (done_batting["Role"] == "all-rounder")
@@ -929,6 +1045,7 @@ with center:
                         .agg({"Role": "first", "Strike_Rate": "mean", "Runs_Scored": "sum", "Balls_Played": "sum"})
                         .sort_values(by="Strike_Rate", ascending=False)
                     ).round(2).reset_index()
+                    strike_rate_diff = strike_rate_diff[strike_rate_diff["Balls_Played"] >= 10]
                     strike_rate_diff["Runs_Scored"]  = strike_rate_diff["Runs_Scored"].astype(int)
                     strike_rate_diff["Balls_Played"] = strike_rate_diff["Balls_Played"].astype(int)
                     strike_rate_diff.index = strike_rate_diff.index + 1
@@ -961,11 +1078,25 @@ with center:
 
                 # ── Batting consistency ──
                 section_heading("📉", "Players Consistency in Batting")
+                st.markdown("""
+                <p style="font-family:'Rajdhani',sans-serif; font-size:14px; color:#8b949e;
+                          margin: -6px 0 10px 0; line-height:1.6;">
+                    A consistency score for each player based on their average runs scored and variability across matches.
+                </p>
+                """, unsafe_allow_html=True)                 
 
                 match_balls_played = df2[df2["Balls_Played"] > 0]
                 match_runs = match_balls_played.groupby(["Match_No","Player_Name"])["Runs_Scored"].sum().reset_index()
+                players_per_match = match_balls_played.groupby("Player_Name")["Match_No"].nunique()
+                all_players_unique = (players_per_match == 1).all()
 
-                if match_balls_played["Match_No"].nunique() > 1:
+                if match_balls_played["Match_No"].nunique() == 1:
+                    st.warning("Players Consistency in Batting is not applicable for a single-match dataset.")
+
+                elif all_players_unique: 
+                    st.warning("The dataset only consists unique players in each match, Players consistency cannot be calculated without same player appearing in multiple matches.")                    
+
+                else:
                     batting_consistency = (
                         match_runs.groupby("Player_Name")["Runs_Scored"]
                         .agg(["mean","std","count"]).round(2).reset_index()
@@ -992,13 +1123,17 @@ with center:
                     plt.tight_layout()
                     st.pyplot(fig)
                     plt.close(fig)
-                else:
-                    st.warning("Players Consistency in Batting is not applicable for a single-match dataset.")
 
                 st.divider()
 
                 # ── Runs by batting order ──
                 section_heading("🔢", "Average Runs by Batting Order")
+                st.markdown("""
+                <p style="font-family:'Rajdhani',sans-serif; font-size:14px; color:#8b949e;
+                          margin: -6px 0 10px 0; line-height:1.6;">
+                    Average runs scored by players based on the batting order (top, middle, lower) across all matches.
+                </p>
+                """, unsafe_allow_html=True)                 
 
                 df2["Batting_Order"] = pd.cut(
                     df2["Batting_Position"], bins=[0,3,7,11], labels=["top","middle","lower"]
@@ -1028,6 +1163,12 @@ with center:
 
                 # ── Phase-wise wickets lost ──
                 section_heading("🔻", "Phase-wise Wickets Lost Breakdown")
+                st.markdown("""
+                <p style="font-family:'Rajdhani',sans-serif; font-size:14px; color:#8b949e;
+                          margin: -6px 0 10px 0; line-height:1.6;">
+                    Total wickets lost by the team in each match phase (powerplay, middle overs, death overs).
+                </p>
+                """, unsafe_allow_html=True)                 
 
                 wickets_df = df2[(df2["Was_Out"] == True) & (df2["Out_Over"] > 0)].copy()
                 wickets_df["Out_Over"] = pd.to_numeric(wickets_df["Out_Over"], errors="coerce")
@@ -1083,6 +1224,12 @@ with center:
 
                 # ── Individual wickets ──
                 section_heading("⚾", "Individual Wickets Taken by Players")
+                st.markdown("""
+                <p style="font-family:'Rajdhani',sans-serif; font-size:14px; color:#8b949e;
+                          margin: -6px 0 10px 0; line-height:1.6;">
+                    Total wickets taken by each player across all matches, sorted from highest to lowest wicket-taker.
+                </p>
+                """, unsafe_allow_html=True)                 
 
                 done_bowling = df2[df2["Overs_Bowled"] > 0]
 
@@ -1113,6 +1260,12 @@ with center:
 
                 # ── Wickets contribution pie ──
                 section_heading("📊", "Total Wickets Contribution")
+                st.markdown("""
+                <p style="font-family:'Rajdhani',sans-serif; font-size:14px; color:#8b949e;
+                          margin: -6px 0 10px 0; line-height:1.6;">
+                    Contribution of total wickets taken by each player to the team's total wickets across all matches.
+                </p>
+                """, unsafe_allow_html=True)                     
 
                 top_bowling   = bowling_diff[["Player_Name","Wickets_Taken"]].head()
                 other_bowlers = (
@@ -1151,6 +1304,12 @@ with center:
 
                 # ── Wickets per match ──
                 section_heading("📈", "Player's Total Wickets in Each Match")
+                st.markdown("""
+                <p style="font-family:'Rajdhani',sans-serif; font-size:14px; color:#8b949e;
+                          margin: -6px 0 10px 0; line-height:1.6;">
+                    Total wickets taken by each player in each match, allows tracking of performance trends across matches.
+                </p>
+                """, unsafe_allow_html=True)                           
 
                 if done_bowling["Match_No"].nunique() > 1:
                     players_list_bowl       = sorted(done_bowling["Player_Name"].unique())
@@ -1187,6 +1346,12 @@ with center:
 
                 # ── Wickets by role ──
                 section_heading("🎭", "Wickets Taken Contribution Based on Roles")
+                st.markdown("""
+                <p style="font-family:'Rajdhani',sans-serif; font-size:14px; color:#8b949e;
+                          margin: -6px 0 10px 0; line-height:1.6;">
+                    Total wickets taken by players based on their roles (batsman, bowler, all-rounder) across all matches.
+                </p>
+                """, unsafe_allow_html=True)                           
 
                 wickets_contribution_by_role = done_bowling[done_bowling["Wickets_Taken"] > 0]
                 wickets_contribution_by_role = (
@@ -1224,6 +1389,12 @@ with center:
 
                 # ── Economy rate comparison ──
                 section_heading("💰", "Economy-Rate Comparison — Bowlers vs All-Rounders")
+                st.markdown("""
+                <p style="font-family:'Rajdhani',sans-serif; font-size:14px; color:#8b949e;
+                          margin: -6px 0 10px 0; line-height:1.6;">
+                    Comparison of economy rates between bowlers and all-rounders for players who have bowled 2 or more overs, to identify who is conceding runs at a lower rate.
+                </p>
+                """, unsafe_allow_html=True)                           
 
                 bowlers_allrounders = done_bowling[
                     (done_bowling["Role"] == "bowler") | (done_bowling["Role"] == "all-rounder")
@@ -1237,6 +1408,7 @@ with center:
                         .agg({"Role": "first", "Economy_Rate": "mean", "Overs_Bowled": "sum", "Runs_Given": "sum"})
                         .sort_values(by="Economy_Rate")
                     ).round(2).reset_index(drop=True)
+                    economy_diff = economy_diff[economy_diff["Overs_Bowled"] >= 2]
                     economy_diff.index += 1
 
                     st.dataframe(economy_diff[["Player_Name","Role","Economy_Rate"]], use_container_width=True)
@@ -1267,11 +1439,25 @@ with center:
 
                 # ── Bowling consistency ──
                 section_heading("📉", "Players Consistency in Bowling")
+                st.markdown("""
+                <p style="font-family:'Rajdhani',sans-serif; font-size:14px; color:#8b949e;
+                          margin: -6px 0 10px 0; line-height:1.6;">
+                    A consistency score for each player based on their average wickets taken and variability across matches.
+                </p>
+                """, unsafe_allow_html=True)                           
 
                 match_overs   = df2[df2["Overs_Bowled"] > 0]
                 match_wickets = match_overs.groupby(["Match_No","Player_Name"])["Wickets_Taken"].sum().reset_index()
+                players_per_match = match_balls_played.groupby("Player_Name")["Match_No"].nunique()
+                all_players_unique = (players_per_match == 1).all()
 
-                if match_overs["Match_No"].nunique() > 1:
+                if match_balls_played["Match_No"].nunique() == 1:
+                    st.warning("Players Consistency in Bowling is not applicable for a single-match dataset.")   
+
+                elif all_players_unique: 
+                    st.warning("The dataset only consists unique players in each match, Players consistency cannot be calculated without same player appearing in multiple matches.")                                 
+
+                else:
                     bowling_consistency = (
                         match_wickets.groupby("Player_Name")["Wickets_Taken"]
                         .agg(["mean","std","count"]).round(2).reset_index()
@@ -1298,8 +1484,6 @@ with center:
                     plt.tight_layout()
                     st.pyplot(fig)
                     plt.close(fig)
-                else:
-                    st.warning("Players Consistency in Bowling is not applicable for a single-match dataset.")
 
                 #st.divider()
                 st.markdown("<div style='height:50px;'></div>", unsafe_allow_html=True)
@@ -1416,6 +1600,12 @@ with center:
 
                 # ── Runs & Wickets per match chart ──
                 section_heading("📊", "Total Runs Scored and Wickets Taken in Each Match")
+                st.markdown("""
+                <p style="font-family:'Rajdhani',sans-serif; font-size:14px; color:#8b949e;
+                          margin: -6px 0 10px 0; line-height:1.6;">
+                    Total runs scored and wickets taken by the team in each match.
+                </p>
+                """, unsafe_allow_html=True)                           
 
                 runs_wickets = (
                     df2.groupby("Match_No", as_index=False)
@@ -1453,7 +1643,7 @@ with center:
                 <div style="font-family:'Rajdhani',sans-serif; font-weight:700;
                             font-size:24px; color:#e0c070; margin:6px 0 14px 0;
                             letter-spacing:0.4px;">
-                    🏆 Key Performance Indicators
+                    🏆 Top Performers
                 </div>
                 """, unsafe_allow_html=True)
 
@@ -1738,7 +1928,7 @@ with center:
                 </div>
                 """, unsafe_allow_html=True)
 
-            version_block("2.01", "14th April 2026", [
+            version_block("2.01", "18th April 2026", [
                 "Improved overall tool user interface",
                 "Improved data validation and cleaning",
                 "Added drop-down expanders for Dataset Columns Overview and About Section",
@@ -1746,6 +1936,7 @@ with center:
                 "Added KPI cards for key performance indicators in the Summary tab",
                 "Improved logic for line charts and Runs/Wickets Contributions",
                 "Organized insights into clear analytical sections",
+                "Fixed Bugs and issues"
             ])
             version_block("2.0", "16th March 2026", [
                 "Improved overall tool user interface",
