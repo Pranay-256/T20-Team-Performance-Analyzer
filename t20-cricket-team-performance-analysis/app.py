@@ -1227,7 +1227,7 @@ with center:
                 st.markdown("""
                 <p style="font-family:'Rajdhani',sans-serif; font-size:14px; color:#8b949e;
                           margin: -6px 0 10px 0; line-height:1.6;">
-                    Total wickets taken by each player across all matches, sorted from highest to lowest wicket-taker.
+                    Total wickets taken based on overs bowled by each player across all matches, sorted from highest to lowest wicket-taker.
                 </p>
                 """, unsafe_allow_html=True)                 
 
@@ -1307,7 +1307,7 @@ with center:
                 st.markdown("""
                 <p style="font-family:'Rajdhani',sans-serif; font-size:14px; color:#8b949e;
                           margin: -6px 0 10px 0; line-height:1.6;">
-                    Total wickets taken by each player in each match, allows tracking of performance trends across matches.
+                    Total wickets taken by each player in each match, allows tracking of performance trends across matches by selecting the player.
                 </p>
                 """, unsafe_allow_html=True)                           
 
@@ -1658,6 +1658,7 @@ with center:
                     kpi_card("💰", "Best Econ. Rate", f"{top_eco_player}", f"ER: {top_eco_value}")
 
                 st.markdown("<br>", unsafe_allow_html=True)
+                st.divider()
 
                 # ── Narrative insight lines ──
                 st.markdown("""
