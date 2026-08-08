@@ -317,6 +317,11 @@ ORDER_PAL      = "viridis"
 # Strike rate — role split colours (kept readable)
 SR_ROLE_COLORS = {"batsman": "#c9a84c", "all-rounder": "#2dd4bf"}
 ECO_ROLE_COLORS = {"bowler": "#4c72b0", "all-rounder": "#2dd4bf"}
+# Player Analytics: distinct palette, separate from other tabs
+PLAYER_BAT_CMAP       = "RdPu"        # pink/magenta tones — player batting
+PLAYER_BOWL_CMAP      = "PuBu"        # purple/blue tones — player bowling
+PLAYER_BAT_LINE_COLOR = "#e0529f"
+PLAYER_BOWL_LINE_COLOR = "#5b7fd6"
 
 # ─────────────────────────────────────────────────────────────
 # CHART FIGURE WIDTH  — matches dataframe width in pixels
@@ -646,8 +651,9 @@ with center:
 
         st.markdown("")
 
-        tab1, tab2, tab3, tab4 = st.tabs(
-            ["📊 Dataset", "🏏 Batting Analytics", "⚾ Bowling Analytics", "📋 Summary"]
+        tab1, tab2, tab3, tab4, tab5 = st.tabs(
+            ["📊 Dataset", "🏏 Batting Analytics", "⚾ Bowling Analytics",
+             "🎯 Player Analytics", "📋 Summary"]
         )
 
         # ══════════════════════════════════════════════════
@@ -742,11 +748,11 @@ with center:
             st.markdown("""
             <p style="font-family:'Rajdhani',sans-serif; font-weight:700;
                       font-size:20px; color:#e0c070; margin:4px 0 10px 0;">
-                Dataset Columns Overview
+                Data Validation Rules
             </p>
             """, unsafe_allow_html=True)
 
-            with st.expander("🙎 Match & Player Info", expanded=False):
+            with st.expander("🙎 Match & Player Info Columns", expanded=False):
                 column_info("Match_No",
                     "The match number this player's performance belongs to. "
                     "Use 1 for your first match, 2 for your second, and so on. "
@@ -767,7 +773,7 @@ with center:
                     "Important: A wicketkeeper who also bats can be entered as wicketkeeper or batsman. If entered wicketkeeper, they will be treated as a batsman for batting stats. "
                     "Preferred datatype: Text.")
 
-            with st.expander("🏏 Batting Info", expanded=False):
+            with st.expander("🏏 Batting Info Columns", expanded=False):
                 column_info("Batting_Position",
                     "The position at which this player came in to bat, from 1 (opener) to 11 (last). "
                     "Every row must have a batting position — blank values are NOT allowed. "
@@ -807,7 +813,7 @@ with center:
                     "Must be filled if Batting_Start_Over is filled. "
                     "Preferred datatype: Integer (whole number, e.g. 0, 45, 102).")
 
-            with st.expander("⚾ Bowling Info", expanded=False):
+            with st.expander("⚾ Bowling Info Columns", expanded=False):
                 column_info("Overs_Bowled",
                     "The total overs bowled by this player in the match. "
                     "For complete overs, enter a whole number (e.g. 4). "
@@ -1489,9 +1495,516 @@ with center:
                 st.markdown("<div style='height:50px;'></div>", unsafe_allow_html=True)
 
         # ══════════════════════════════════════════════════
-        # TAB 4 — SUMMARY
+        # TAB 4 — PLAYER ANALYTICS
         # ══════════════════════════════════════════════════
         with tab4:
+ 
+            if st.session_state.get("df2") is None:
+                st.warning("Please upload and confirm your dataset in the Dataset tab first.")
+            else:
+                df2 = st.session_state.df2
+ 
+                st.markdown("""
+                <p style="font-family:'Rajdhani',sans-serif; font-size:14px; color:#8b949e;
+                          margin: 4px 0 10px 0; line-height:1.6;">
+                    Select a player to view their individual batting and bowling performance
+                    across all matches.
+                </p>
+                """, unsafe_allow_html=True)
+ 
+                all_players_pa = sorted(df2["Player_Name"].unique())
+                selected_player_pa = st.selectbox(
+                    "Select Player", all_players_pa, key="player_analytics_select_player"
+                )
+ 
+                player_df_pa = df2[df2["Player_Name"] == selected_player_pa]
+ 
+                # ── Role, matches played, batting order ──
+                player_role_pa    = player_df_pa["Role"].mode().iloc[0]
+                matches_played_pa = player_df_pa["Match_No"].nunique()
+ 
+                avg_position_pa = int(round(player_df_pa["Batting_Position"].mean()))
+                if avg_position_pa <= 3:
+                    order_label_pa = "top"
+                elif avg_position_pa <= 7:
+                    order_label_pa = "middle"
+                else:
+                    order_label_pa = "lower"
+ 
+                has_batted_pa = (player_df_pa["Balls_Played"] > 0).any()
+                has_bowled_pa = (player_df_pa["Overs_Bowled"] > 0).any()
+ 
+                total_runs_pa    = int(player_df_pa["Runs_Scored"].sum())
+                total_wickets_pa = int(player_df_pa["Wickets_Taken"].sum())
+ 
+                st.markdown(f"""
+                <div style="font-family:'Rajdhani',sans-serif; font-weight:700;
+                            font-size:24px; color:#e0c070; margin:14px 0 12px 0;
+                            letter-spacing:0.4px;">
+                    🔎 {selected_player_pa}'s Information
+                </div>
+                """, unsafe_allow_html=True)
+ 
+                insight_line(1, f"Selected player is a <strong>{player_role_pa.title()}</strong>, based on the role they have.")
+                insight_line(2, f"The player has played <strong>{matches_played_pa}</strong> match(es).")
+                insight_line(3, f"Usually bats at the <strong>{order_label_pa} order</strong>.")
+                if has_batted_pa:
+                    insight_line(4, f"The player has scored <strong>{total_runs_pa} runs</strong>.")
+                if has_bowled_pa:
+                    insight_line(5, f"The player has taken <strong>{total_wickets_pa} wickets</strong>.")
+ 
+                st.divider()
+ 
+                # ════════════════════════════════════════
+                # BATTING INSIGHTS
+                # ════════════════════════════════════════
+                section_heading("🏏", f"{selected_player_pa}'s Individual Batting Stats")
+                st.markdown("""
+                <p style="font-family:'Rajdhani',sans-serif; font-size:14px; color:#8b949e;
+                          margin: -6px 0 10px 0; line-height:1.6;">
+                    A detailed match-by-match breakdown of the selected player's batting
+                    performance, including runs, strike rate, and contribution to the team's total.
+                </p>
+                """, unsafe_allow_html=True)
+ 
+                if not has_batted_pa:
+                    st.warning("The player has not done batting in any match, so we cannot present the batting insights for selected player.")
+                else:
+                    match_batting_pa = (
+                        player_df_pa.groupby("Match_No", as_index=False)
+                        .agg({"Runs_Scored": "sum", "Balls_Played": "sum"})
+                        .sort_values("Match_No")
+                    )
+                    match_batting_pa["Runs_Scored"]  = match_batting_pa["Runs_Scored"].astype(int)
+                    match_batting_pa["Balls_Played"] = match_batting_pa["Balls_Played"].astype(int)
+                    match_batting_pa["Strike_Rate"]  = 0.0
+                    mask_bp = match_batting_pa["Balls_Played"] > 0
+                    match_batting_pa.loc[mask_bp, "Strike_Rate"] = (
+                        (match_batting_pa.loc[mask_bp, "Runs_Scored"] /
+                         match_batting_pa.loc[mask_bp, "Balls_Played"]) * 100
+                    ).round(2)
+                    match_batting_pa.index = match_batting_pa.index + 1
+ 
+                    batted_rows_pa = match_batting_pa[match_batting_pa["Balls_Played"] > 0]
+                    if len(batted_rows_pa) > 1:
+                        bat_consistency_pa = round(
+                            batted_rows_pa["Runs_Scored"].mean() /
+                            (batted_rows_pa["Runs_Scored"].std() + 1), 2
+                        )
+                    else:
+                        bat_consistency_pa = None
+ 
+                    total_balls_pa = int(match_batting_pa["Balls_Played"].sum())
+                    overall_sr_pa = round((total_runs_pa / total_balls_pa) * 100, 2) if total_balls_pa > 0 else 0.0
+ 
+                    # ── KPI row (4 cards) ──
+                    k1, k2, k3, k4 = st.columns(4)
+                    with k1:
+                        kpi_card("🏏", "Total Runs", f"{total_runs_pa}")
+                    with k2:
+                        kpi_card("🎯", "Balls Played", f"{total_balls_pa}")
+                    with k3:
+                        kpi_card("⚡", "Strike Rate", f"{overall_sr_pa}")
+                    with k4:
+                        kpi_card("📉", "Batting Consistency",
+                                 f"{bat_consistency_pa}" if bat_consistency_pa is not None else "N/A")
+ 
+                    st.divider()
+ 
+                    # ── Sub-section: Runs in each match ──
+                    section_heading("📊", f"{selected_player_pa}'s Runs in Each Match")
+                    st.markdown("""
+                    <p style="font-family:'Rajdhani',sans-serif; font-size:14px; color:#8b949e;
+                              margin: -6px 0 10px 0; line-height:1.6;">
+                        Match-by-match runs scored by the player, based on the number of balls faced.
+                    </p>
+                    """, unsafe_allow_html=True)
+ 
+                    st.dataframe(
+                        match_batting_pa[["Match_No", "Runs_Scored", "Balls_Played"]],
+                        use_container_width=True
+                    )
+ 
+                    n_pa = len(match_batting_pa)
+                    colors_pa = sns.color_palette(PLAYER_BAT_CMAP, n_pa)
+                    fig, ax = plt.subplots(figsize=(BAR_W, BAR_H), dpi=120)
+                    sns.barplot(x=match_batting_pa["Match_No"].astype(int), y=match_batting_pa["Runs_Scored"],
+                                palette=colors_pa, ax=ax)
+                    ax.set_yticks(match_batting_pa["Runs_Scored"].tolist())
+                    ax.set_title(f"{selected_player_pa}'s Runs in Each Match", fontsize=14, fontweight="bold")
+                    ax.set_xlabel("Match No", fontsize=11)
+                    ax.set_ylabel("Runs Scored", fontsize=11)
+                    ax.grid(axis='y', linestyle='--', alpha=0.4)
+                    plt.tight_layout()
+                    st.pyplot(fig)
+                    plt.close(fig)
+ 
+                    st.divider()
+ 
+                    # ── Sub-section: Strike rate in each match ──
+                    section_heading("⚡", f"{selected_player_pa}'s Strike Rate in Each Match")
+                    st.markdown("""
+                    <p style="font-family:'Rajdhani',sans-serif; font-size:14px; color:#8b949e;
+                              margin: -6px 0 10px 0; line-height:1.6;">
+                        Match-by-match strike rate of the player, indicating how quickly they
+                        have been scoring runs.
+                    </p>
+                    """, unsafe_allow_html=True)
+ 
+                    st.dataframe(
+                        match_batting_pa[["Match_No", "Strike_Rate"]],
+                        use_container_width=True
+                    )
+ 
+                    fig, ax = plt.subplots(figsize=(LINE_W, LINE_H), dpi=120)
+                    sns.lineplot(x=match_batting_pa["Match_No"].astype(int), y=match_batting_pa["Strike_Rate"],
+                                 marker="o", color=PLAYER_BAT_LINE_COLOR, ax=ax)
+                    ax.set_xticks(match_batting_pa["Match_No"].astype(int).tolist())
+                    ax.set_yticks(match_batting_pa["Strike_Rate"].tolist())
+                    ax.set_title(f"{selected_player_pa}'s Strike Rate in Each Match", fontsize=14, fontweight="bold")
+                    ax.set_xlabel("Match No", fontsize=11)
+                    ax.set_ylabel("Strike Rate", fontsize=11)
+                    ax.grid(linestyle='--', alpha=0.4)
+                    plt.tight_layout()
+                    st.pyplot(fig)
+                    plt.close(fig)
+ 
+                    st.divider()
+ 
+                    # ── Sub-section: Runs contribution in a selected match ──
+                    section_heading("🥧", f"{selected_player_pa}'s Runs Contribution in a Match")
+                    st.markdown("""
+                    <p style="font-family:'Rajdhani',sans-serif; font-size:14px; color:#8b949e;
+                              margin: -6px 0 10px 0; line-height:1.6;">
+                        Contribution of the selected player's runs to the team's total in a chosen
+                        match, compared to the rest of the batting line-up.
+                    </p>
+                    """, unsafe_allow_html=True)
+ 
+                    matches_for_player_pa = sorted(match_batting_pa["Match_No"].astype(int).unique())
+                    selected_match_bat_pa = st.selectbox(
+                        "Select Match", matches_for_player_pa, key="player_analytics_batting_match_select"
+                    )
+ 
+                    match_all_batters_pa = df2[(df2["Match_No"] == selected_match_bat_pa) & (df2["Balls_Played"] > 0)]
+                    team_runs_this_match_pa = int(match_all_batters_pa["Runs_Scored"].sum())
+                    player_runs_this_match_pa = int(
+                        match_all_batters_pa.loc[
+                            match_all_batters_pa["Player_Name"] == selected_player_pa, "Runs_Scored"
+                        ].sum()
+                    )
+                    others_runs_this_match_pa = team_runs_this_match_pa - player_runs_this_match_pa
+ 
+                    match_pie_data_pa = pd.DataFrame({
+                        "Label": [selected_player_pa, "Others"],
+                        "Runs": [player_runs_this_match_pa, others_runs_this_match_pa]
+                    })
+                    match_pie_data_pa = match_pie_data_pa[match_pie_data_pa["Runs"] > 0]
+ 
+                    if match_pie_data_pa.empty:
+                        st.info(f"{selected_player_pa} did not score any runs in Match {selected_match_bat_pa}.")
+                    else:
+                        st.dataframe(match_pie_data_pa, use_container_width=True)
+ 
+                        pie_colors_pa = sns.color_palette(PLAYER_BAT_CMAP, len(match_pie_data_pa))
+                        fig, ax = plt.subplots(figsize=(PIE_W, PIE_H), dpi=120)
+                        wedges, texts, autotexts = ax.pie(
+                            match_pie_data_pa["Runs"], labels=None, autopct="%1.1f%%",
+                            startangle=90, wedgeprops={"edgecolor": "black"}, colors=pie_colors_pa
+                        )
+                        for at in autotexts:
+                            at.set_fontsize(9); at.set_fontweight("bold"); at.set_color("black")
+                        legend_labels = [f"{l}  —  {r}" for l, r in zip(match_pie_data_pa["Label"], match_pie_data_pa["Runs"])]
+                        ax.legend(wedges, legend_labels, title="Players", title_fontsize=9,
+                                  loc="center left", bbox_to_anchor=(1, 0.5), fontsize=9,
+                                  framealpha=1.0, edgecolor="#000000", facecolor="#ffffff", labelcolor="#000000")
+                        ax.get_legend().get_title().set_color("#000000")
+                        ax.set_title(f"{selected_player_pa}'s Runs Contribution — Match {selected_match_bat_pa}",
+                                     fontsize=14, fontweight="bold")
+                        plt.tight_layout()
+                        st.pyplot(fig)
+                        plt.close(fig)
+ 
+                    st.divider()
+ 
+                    # ── Sub-section: Runs contribution against the team overall ──
+                    section_heading("🎯", f"{selected_player_pa}'s Run Contribution Against the Team")
+                    st.markdown("""
+                    <p style="font-family:'Rajdhani',sans-serif; font-size:14px; color:#8b949e;
+                              margin: -6px 0 10px 0; line-height:1.6;">
+                        Contribution of the selected player's total runs to the team's overall
+                        runs scored across all matches.
+                    </p>
+                    """, unsafe_allow_html=True)
+ 
+                    all_batters_total_pa = df2[df2["Balls_Played"] > 0]
+                    team_total_runs_pa = int(all_batters_total_pa["Runs_Scored"].sum())
+                    other_total_runs_pa = team_total_runs_pa - total_runs_pa
+ 
+                    overall_pie_data_pa = pd.DataFrame({
+                        "Label": [selected_player_pa, "Others"],
+                        "Runs": [total_runs_pa, other_total_runs_pa]
+                    })
+                    overall_pie_data_pa = overall_pie_data_pa[overall_pie_data_pa["Runs"] > 0]
+ 
+                    if overall_pie_data_pa.empty:
+                        st.info(f"{selected_player_pa} has not scored any runs across all matches.")
+                    else:
+                        st.dataframe(overall_pie_data_pa, use_container_width=True)
+ 
+                        pie_colors_pa2 = sns.color_palette(PLAYER_BAT_CMAP, len(overall_pie_data_pa))
+                        fig, ax = plt.subplots(figsize=(PIE_W, PIE_H), dpi=120)
+                        wedges, texts, autotexts = ax.pie(
+                            overall_pie_data_pa["Runs"], labels=None, autopct="%1.1f%%",
+                            startangle=90, wedgeprops={"edgecolor": "black"}, colors=pie_colors_pa2
+                        )
+                        for at in autotexts:
+                            at.set_fontsize(9); at.set_fontweight("bold"); at.set_color("black")
+                        legend_labels = [f"{l}  —  {r}" for l, r in zip(overall_pie_data_pa["Label"], overall_pie_data_pa["Runs"])]
+                        ax.legend(wedges, legend_labels, title="Players", title_fontsize=9,
+                                  loc="center left", bbox_to_anchor=(1, 0.5), fontsize=9,
+                                  framealpha=1.0, edgecolor="#000000", facecolor="#ffffff", labelcolor="#000000")
+                        ax.get_legend().get_title().set_color("#000000")
+                        ax.set_title(f"{selected_player_pa}'s Run Contribution Against the Team",
+                                     fontsize=14, fontweight="bold")
+                        plt.tight_layout()
+                        st.pyplot(fig)
+                        plt.close(fig)
+ 
+                st.divider()
+ 
+                # ════════════════════════════════════════
+                # BOWLING INSIGHTS
+                # ════════════════════════════════════════
+                section_heading("⚾", f"{selected_player_pa}'s Individual Bowling Stats")
+                st.markdown("""
+                <p style="font-family:'Rajdhani',sans-serif; font-size:14px; color:#8b949e;
+                          margin: -6px 0 10px 0; line-height:1.6;">
+                    A detailed match-by-match breakdown of the selected player's bowling
+                    performance, including wickets, economy rate, and contribution to the team's total.
+                </p>
+                """, unsafe_allow_html=True)
+ 
+                if not has_bowled_pa:
+                    st.warning("The player has not done bowling in any match, so we cannot present the bowling insights for selected player.")
+                else:
+                    over_col_pa = player_df_pa["Overs_Bowled"].astype(int)
+                    ball_col_pa = ((player_df_pa["Overs_Bowled"] - over_col_pa) * 10).round().astype(int)
+ 
+                    match_bowling_pa = player_df_pa.copy()
+                    match_bowling_pa["Real_Over"] = over_col_pa + (ball_col_pa / 6)
+ 
+                    match_bowling_pa = (
+                        match_bowling_pa.groupby("Match_No", as_index=False)
+                        .agg({"Wickets_Taken": "sum", "Overs_Bowled": "sum",
+                              "Runs_Given": "sum", "Real_Over": "sum"})
+                        .sort_values("Match_No")
+                    )
+                    match_bowling_pa["Wickets_Taken"] = match_bowling_pa["Wickets_Taken"].astype(int)
+                    match_bowling_pa["Economy_Rate"] = 0.0
+                    mask_ov = match_bowling_pa["Real_Over"] > 0
+                    match_bowling_pa.loc[mask_ov, "Economy_Rate"] = (
+                        match_bowling_pa.loc[mask_ov, "Runs_Given"] /
+                        match_bowling_pa.loc[mask_ov, "Real_Over"]
+                    ).round(2)
+                    match_bowling_pa.index = match_bowling_pa.index + 1
+ 
+                    bowled_rows_pa = match_bowling_pa[match_bowling_pa["Overs_Bowled"] > 0]
+                    if len(bowled_rows_pa) > 1:
+                        bowl_consistency_pa = round(
+                            bowled_rows_pa["Wickets_Taken"].mean() /
+                            (bowled_rows_pa["Wickets_Taken"].std() + 1), 2
+                        )
+                    else:
+                        bowl_consistency_pa = None
+ 
+                    total_overs_pa = round(float(match_bowling_pa["Overs_Bowled"].sum()), 1)
+                    total_real_over_pa = float(match_bowling_pa["Real_Over"].sum())
+                    total_runs_given_pa = float(match_bowling_pa["Runs_Given"].sum())
+                    overall_eco_pa = round(total_runs_given_pa / total_real_over_pa, 2) if total_real_over_pa > 0 else 0.0
+ 
+                    # ── KPI row (4 cards) ──
+                    k1, k2, k3, k4 = st.columns(4)
+                    with k1:
+                        kpi_card("⚾", "Total Wickets", f"{total_wickets_pa}")
+                    with k2:
+                        kpi_card("🎯", "Overs Bowled", f"{total_overs_pa}")
+                    with k3:
+                        kpi_card("💰", "Economy Rate", f"{overall_eco_pa}")
+                    with k4:
+                        kpi_card("📉", "Bowling Consistency",
+                                 f"{bowl_consistency_pa}" if bowl_consistency_pa is not None else "N/A")
+ 
+                    st.divider()
+ 
+                    # ── Sub-section: Wickets in each match ──
+                    section_heading("📊", f"{selected_player_pa}'s Wickets in Each Match")
+                    st.markdown("""
+                    <p style="font-family:'Rajdhani',sans-serif; font-size:14px; color:#8b949e;
+                              margin: -6px 0 10px 0; line-height:1.6;">
+                        Match-by-match wickets taken by the player, based on the overs bowled.
+                    </p>
+                    """, unsafe_allow_html=True)
+ 
+                    st.dataframe(
+                        match_bowling_pa[["Match_No", "Wickets_Taken", "Overs_Bowled"]],
+                        use_container_width=True
+                    )
+ 
+                    n_pb = len(match_bowling_pa)
+                    colors_pb = sns.color_palette(PLAYER_BOWL_CMAP, n_pb)
+                    fig, ax = plt.subplots(figsize=(BAR_W, BAR_H), dpi=120)
+                    sns.barplot(x=match_bowling_pa["Match_No"].astype(int), y=match_bowling_pa["Wickets_Taken"],
+                                palette=colors_pb, ax=ax)
+                    ax.set_yticks(match_bowling_pa["Wickets_Taken"].tolist())
+                    ax.set_title(f"{selected_player_pa}'s Wickets in Each Match", fontsize=14, fontweight="bold")
+                    ax.set_xlabel("Match No", fontsize=11)
+                    ax.set_ylabel("Wickets Taken", fontsize=11)
+                    ax.grid(axis='y', linestyle='--', alpha=0.4)
+                    plt.tight_layout()
+                    st.pyplot(fig)
+                    plt.close(fig)
+ 
+                    st.divider()
+ 
+                    # ── Sub-section: Economy rate in each match ──
+                    section_heading("💰", f"{selected_player_pa}'s Economy Rate in Each Match")
+                    st.markdown("""
+                    <p style="font-family:'Rajdhani',sans-serif; font-size:14px; color:#8b949e;
+                              margin: -6px 0 10px 0; line-height:1.6;">
+                        Match-by-match economy rate of the player, indicating how many runs
+                        they have conceded per over.
+                    </p>
+                    """, unsafe_allow_html=True)
+ 
+                    st.dataframe(
+                        match_bowling_pa[["Match_No", "Economy_Rate"]],
+                        use_container_width=True
+                    )
+ 
+                    fig, ax = plt.subplots(figsize=(LINE_W, LINE_H), dpi=120)
+                    sns.lineplot(x=match_bowling_pa["Match_No"].astype(int), y=match_bowling_pa["Economy_Rate"],
+                                 marker="o", color=PLAYER_BOWL_LINE_COLOR, ax=ax)
+                    ax.set_xticks(match_bowling_pa["Match_No"].astype(int).tolist())
+                    ax.set_yticks(match_bowling_pa["Economy_Rate"].tolist())
+                    ax.set_title(f"{selected_player_pa}'s Economy Rate in Each Match", fontsize=14, fontweight="bold")
+                    ax.set_xlabel("Match No", fontsize=11)
+                    ax.set_ylabel("Economy Rate", fontsize=11)
+                    ax.grid(linestyle='--', alpha=0.4)
+                    plt.tight_layout()
+                    st.pyplot(fig)
+                    plt.close(fig)
+ 
+                    st.divider()
+ 
+                    # ── Sub-section: Wickets contribution in a selected match ──
+                    section_heading("🥧", f"{selected_player_pa}'s Wickets Contribution in a Match")
+                    st.markdown("""
+                    <p style="font-family:'Rajdhani',sans-serif; font-size:14px; color:#8b949e;
+                              margin: -6px 0 10px 0; line-height:1.6;">
+                        Contribution of the selected player's wickets to the team's total in a
+                        chosen match, compared to the rest of the bowling attack.
+                    </p>
+                    """, unsafe_allow_html=True)
+ 
+                    matches_for_bowler_pa = sorted(match_bowling_pa["Match_No"].astype(int).unique())
+                    selected_match_bowl_pa = st.selectbox(
+                        "Select Match", matches_for_bowler_pa, key="player_analytics_bowling_match_select"
+                    )
+ 
+                    match_all_bowlers_pa = df2[(df2["Match_No"] == selected_match_bowl_pa) & (df2["Overs_Bowled"] > 0)]
+                    team_wkts_this_match_pa = int(match_all_bowlers_pa["Wickets_Taken"].sum())
+                    player_wkts_this_match_pa = int(
+                        match_all_bowlers_pa.loc[
+                            match_all_bowlers_pa["Player_Name"] == selected_player_pa, "Wickets_Taken"
+                        ].sum()
+                    )
+                    others_wkts_this_match_pa = team_wkts_this_match_pa - player_wkts_this_match_pa
+ 
+                    match_pie_data_pb = pd.DataFrame({
+                        "Label": [selected_player_pa, "Others"],
+                        "Wickets": [player_wkts_this_match_pa, others_wkts_this_match_pa]
+                    })
+                    match_pie_data_pb = match_pie_data_pb[match_pie_data_pb["Wickets"] > 0]
+ 
+                    if match_pie_data_pb.empty:
+                        st.info(f"{selected_player_pa} did not take any wickets in Match {selected_match_bowl_pa}.")
+                    else:
+                        st.dataframe(match_pie_data_pb, use_container_width=True)
+ 
+                        pie_colors_pb = sns.color_palette(PLAYER_BOWL_CMAP, len(match_pie_data_pb))
+                        fig, ax = plt.subplots(figsize=(PIE_W, PIE_H), dpi=120)
+                        wedges, texts, autotexts = ax.pie(
+                            match_pie_data_pb["Wickets"], labels=None, autopct="%1.1f%%",
+                            startangle=90, wedgeprops={"edgecolor": "black"}, colors=pie_colors_pb
+                        )
+                        for at in autotexts:
+                            at.set_fontsize(9); at.set_fontweight("bold"); at.set_color("black")
+                        legend_labels = [f"{l}  —  {w}" for l, w in zip(match_pie_data_pb["Label"], match_pie_data_pb["Wickets"])]
+                        ax.legend(wedges, legend_labels, title="Players", title_fontsize=9,
+                                  loc="center left", bbox_to_anchor=(1, 0.5), fontsize=9,
+                                  framealpha=1.0, edgecolor="#000000", facecolor="#ffffff", labelcolor="#000000")
+                        ax.get_legend().get_title().set_color("#000000")
+                        ax.set_title(f"{selected_player_pa}'s Wickets Contribution — Match {selected_match_bowl_pa}",
+                                     fontsize=14, fontweight="bold")
+                        plt.tight_layout()
+                        st.pyplot(fig)
+                        plt.close(fig)
+ 
+                    st.divider()
+ 
+                    # ── Sub-section: Wickets contribution against the team overall ──
+                    section_heading("🎯", f"{selected_player_pa}'s Wicket Contribution Against the Team")
+                    st.markdown("""
+                    <p style="font-family:'Rajdhani',sans-serif; font-size:14px; color:#8b949e;
+                              margin: -6px 0 10px 0; line-height:1.6;">
+                        Contribution of the selected player's total wickets to the team's overall
+                        wickets taken across all matches.
+                    </p>
+                    """, unsafe_allow_html=True)
+ 
+                    all_bowlers_total_pa = df2[df2["Overs_Bowled"] > 0]
+                    team_total_wkts_pa = int(all_bowlers_total_pa["Wickets_Taken"].sum())
+                    other_total_wkts_pa = team_total_wkts_pa - total_wickets_pa
+ 
+                    overall_pie_data_pb = pd.DataFrame({
+                        "Label": [selected_player_pa, "Others"],
+                        "Wickets": [total_wickets_pa, other_total_wkts_pa]
+                    })
+                    overall_pie_data_pb = overall_pie_data_pb[overall_pie_data_pb["Wickets"] > 0]
+ 
+                    if overall_pie_data_pb.empty:
+                        st.info(f"{selected_player_pa} has not taken any wickets across all matches.")
+                    else:
+                        st.dataframe(overall_pie_data_pb, use_container_width=True)
+ 
+                        pie_colors_pb2 = sns.color_palette(PLAYER_BOWL_CMAP, len(overall_pie_data_pb))
+                        fig, ax = plt.subplots(figsize=(PIE_W, PIE_H), dpi=120)
+                        wedges, texts, autotexts = ax.pie(
+                            overall_pie_data_pb["Wickets"], labels=None, autopct="%1.1f%%",
+                            startangle=90, wedgeprops={"edgecolor": "black"}, colors=pie_colors_pb2
+                        )
+                        for at in autotexts:
+                            at.set_fontsize(9); at.set_fontweight("bold"); at.set_color("black")
+                        legend_labels = [f"{l}  —  {w}" for l, w in zip(overall_pie_data_pb["Label"], overall_pie_data_pb["Wickets"])]
+                        ax.legend(wedges, legend_labels, title="Players", title_fontsize=9,
+                                  loc="center left", bbox_to_anchor=(1, 0.5), fontsize=9,
+                                  framealpha=1.0, edgecolor="#000000", facecolor="#ffffff", labelcolor="#000000")
+                        ax.get_legend().get_title().set_color("#000000")
+                        ax.set_title(f"{selected_player_pa}'s Wicket Contribution Against the Team",
+                                     fontsize=14, fontweight="bold")
+                        plt.tight_layout()
+                        st.pyplot(fig)
+                        plt.close(fig)
+ 
+                st.markdown("<div style='height:50px;'></div>", unsafe_allow_html=True)
+ 
+         
+
+        # ══════════════════════════════════════════════════
+        # TAB 5 — SUMMARY
+        # ══════════════════════════════════════════════════
+        with tab5:
 
             if st.session_state.get("df2") is None:
                 st.warning("Please upload and confirm your dataset in the Dataset tab first.")
